@@ -7,8 +7,11 @@ has the correct matching Data Dictionary).
 Since REDCap *ONLY* accepts CSV files you will need to convert this TSV into a CSV prior to importing it into your REDCap
 project.  However, some of the data fields that you migrated from OnCore may contain commas, therefore the first step
 that I execute after saving the STDOUT from the clean_and_parse_oncore.pl is this:
+
 ```perl -pe 's/,/\|/g' monolithic_table.tsv > monolithic_table_WITH_NO_COMMAS.tsv```
+
 Followed by:
+
 ```perl -pe 's/\t/,/g' monolithic_table_WITH_NO_COMMAS.tsv > monolithic_table_WITH_NO_COMMAS.csv```
 
 You will not be able to run this script without the matching OnCore TSV input files (which are not available in this 
