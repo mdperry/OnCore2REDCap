@@ -5,6 +5,28 @@ Perl code from a project for the UCSF HDFCCC
 
 ## Background
 ## List of Dumped OnCore Tables provided as MS-Excel Spreadsheets
+Archive:  125519-StudyData-04-10-2018.zip
+OnCore Name | Cleaned, Filtered, Formatted for Input to Perl Script Name
+----------- | --------------------------------------
+Demographics.xlsx | demographics_filtered.tsv
+Blood Labs V2.xlsx | blood_labs_v2_new_filtered.tsv
+ECOG-Weight V3.xlsx | patient_ECOG_scale_performance_status_and_weight_new_filtered.tsv
+Followup.xlsx | Not used
+GU-Disease Assessment V3.xlsx | gu_disease_assessment_new_v3_filtered.tsv
+Past Tissue V1.xlsx | Not used
+Prostate Diagnosis V4.xlsx | prostate_diagnosis_v4_new_filtered.tsv
+SU2C Biopsy V3.xlsx | su2c_biopsy_v3_new_filtered.tsv
+SU2C Pr Ca Tx Sumry V2.xlsx | su2c_pr_ca_tx_sumry_v2_new_filtered.tsv
+SU2C Prior TX V3.xlsx | su2c_prior_tx_v3_new_filtered.tsv
+SU2C Specimen V1.xlsx | Not used
+SU2C Subsequent Treatment V1.xlsx | su2c_subsequent_treatment_v1_new_filtered.tsv
+SU2C Tissue Report V1.xlsx | Not used 
+
+This additional Input File was being manually curated and maintained separately from any Project Databases and was provided manually after the code for parsing and processing the files above was at the Beta Testing stage:
+WCDT clinical database version 4-6-2018 - additional data points for Marc Perry.xlsx which was transformed into: 
+wcdt_clinical_additional_data.tsv
+### Data Cleaning Issues for the OnCore Tables
+
 ## Major Concepts
 
 
