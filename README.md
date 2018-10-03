@@ -6,8 +6,9 @@ Perl code from a project for the UCSF HDFCCC
 ## Background
 ## List of Dumped OnCore Tables provided as MS-Excel Spreadsheets
 Archive:  125519-StudyData-04-10-2018.zip
+
 OnCore Name | Cleaned, Filtered, Formatted for Input to Perl Script Name
------------ | --------------------------------------
+----
 Demographics.xlsx | demographics_filtered.tsv
 Blood Labs V2.xlsx | blood_labs_v2_new_filtered.tsv
 ECOG-Weight V3.xlsx | patient_ECOG_scale_performance_status_and_weight_new_filtered.tsv
