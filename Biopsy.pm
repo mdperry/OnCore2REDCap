@@ -1,9 +1,21 @@
 package Biopsy;
 
 use base 'Exporter';
-our @EXPORT_OK = 'extract_biopsies';
-our @EXPORT    = 'extract_biopsies';
-    
+our @EXPORT_OK = qw(extract_biopsies add_biopsy_dates);
+our @EXPORT    = qw(extract_biopsies add_biopsy_dates);
+
+sub add_biopsy_dates {
+    my $patient_id = shift @_;
+    my %records = %{shift @_};
+    my $timespan = shift @_;
+
+    if ( $records{DATE_OF_PROCEDURE} ) {
+        my $date = iso_date( $records{DATE_OF_PROCEDURE} );
+        push @{$timespan->{$patient_id}{biopsy_dates}}, $date;
+    }
+} # close sub
+
+
 sub extract_biopsies {
     my $patient_id = shift @_;
     my %hash = %{ shift @_ };

@@ -1,8 +1,20 @@
 package Postbiopsy;
 
 use base 'Exporter';
-our @EXPORT_OK = 'extract_postbx_tx';
-our @EXPORT    = 'extract_postbx_tx';
+our @EXPORT_OK = qw(extract_postbx_tx add_progression_dates);
+our @EXPORT    = qw(extract_postbx_tx add_progression_dates);
+
+sub add_progression_dates {
+    my $patient_id = shift @_;
+    my %records = %{shift @_};
+    my $timespan = shift @_;
+    
+    if ( $records{ProgressionDate} ) {
+        my $date = iso_date( $records{ProgressionDate} );
+        push @{$timespan->{$patient_id}{txprogdates}}, $date;
+    }
+    
+} # close sub
 
 
 sub extract_postbx_tx {
@@ -487,17 +499,6 @@ sub iso_date {
     }
     else {
         print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Postbiopsy\n";
-#	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
     }
     return $good_date;
 } # close sub iso_date

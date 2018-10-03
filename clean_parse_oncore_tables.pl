@@ -6,7 +6,7 @@
 # 
 # 
 # 
-# Last Updated: 2018-09-28, Status: in development
+# Last Updated: 2018-10-01, Status: in development
 
 use strict;
 use warnings;
@@ -16,15 +16,15 @@ binmode STDOUT, ":utf8";
 use utf8;
 use JSON;
 use Demographics;
-use Biopsy;
+use Biopsy qw(add_biopsy_dates extract_biopsies);
 use Diagnosis;
 use Primary;
 use Ecogps;
 use Preenrollment;
 use Bloodlabs;
-use Postbiopsy;
+use Postbiopsy qw(add_progression_dates extract_postbx_tx);
 use Assessment;
-use Date::Manip::Date;
+# use Date::Manip::Date;
 
 
 # Testing Version:
@@ -265,6 +265,8 @@ my @metadata; # an array to hold all the hashes from each line
 
 # A global variable to fill with biopsy time points
 my %timespans = ();
+# A global variable to fill with ecog time points
+my %ecog_dates = ();
 
 # STEP 1: Read in all the OnCore TSV files in a specific order, and convert
 # them into a single array of hashrefs
@@ -287,19 +289,31 @@ foreach my $file ( @table_names ) {
         # if this record is from the OnCore Biopsy table then extract some values into
 	# the %timespans hash
         if ( $input_records{FORM_DESC_} ) {
+            my $id = 'DTB-' . $input_records{SEQUENCE_NO_};
 	    if ( $input_records{FORM_DESC_} eq 'SU2C GU Biopsy' ) {
-	        my $id = 'DTB-' . $input_records{SEQUENCE_NO_};
-	        if ( $input_records{DATE_OF_PROCEDURE} ) {
-                    my $date = iso_date( $input_records{DATE_OF_PROCEDURE} );
-                    push @{$timespans{$id}{biopsy_dates}}, $date;
-	        }
+		add_biopsy_dates( $id, \%input_records, \%timespans, );
 	    }
-        }
+	    if ( $input_records{FORM_DESC_} eq 'SU2C Subsequent Treatment' ) {
+		add_progression_dates( $id, \%input_records, \%timespans, );
+	    }
+
+            # if ( $input_records{FORM_DESC_} eq 'ECOG-Weight' ) {
+            #     add_ecog_dates( $id, \%input_records, \%timespans, );
+            #     if ( $input_records{VISIT_DATE} ) {
+            #        my $date = iso_date ( $input_records{VISIT_DATE} );
+	    # 	    if ( $input_records{SEGMENT} =~ m/Progression/ ) {
+            #            push @{$ecog_dates{$id}{Progression}}, $date;
+	    #       }
+	    #  }
+	    # }
+	}
     } # close while loop
 
     close $FH1;
 } # close foreach loop 
 
+print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
+exit;
 
 # STEP 1.5 (NEW) sort the dates in the %timespans hash
 
@@ -331,8 +345,15 @@ foreach my $id ( keys( %timespans ) ) {
     }
 } # close foreach my $id loop
 
-print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-exit;
+# Do the same thing, sort the dates of the ecog_dates for each ID for each segment
+foreach my $id ( keys( %ecog_dates ) ) {
+    foreach my $segment ( keys( $ecog_dates{$id} ) ) {
+        @{$ecog_dates{$id}{$segment}} = sort { $a cmp $b } @{$ecog_dates{$id}{$segment}};
+    } # close foreach my $segment loop
+} # close foreach my $id loop
+
+# print "\n", Data::Dumper->new([\%ecog_dates],[qw(ecog_dates)])->Indent(1)->Quotekeys(0)->Dump, "\n";
+# exit;
     
 # STEP 2. Process each row, one at a time
     
@@ -435,7 +456,7 @@ physical_exam
 =cut
 
     if ( $current_table eq 'ecogps' ) {
-        extract_ecogps ( $patient_id, \%hash, \%redcap, \@fields_to_print, );
+        extract_ecogps ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%ecog_dates, );
     }
 
     
@@ -528,7 +549,7 @@ of feature requests to request.
 	# The call to the extract_additional sub-routine in the Additional.pm module
 	# is passed the $patient_id for this record, and then references to the %hash for this
 	# record, the global %redcap hash
-        extract_additional ( $patient_id, \%hash, \%redcap, );
+#        extract_additional ( $patient_id, \%hash, \%redcap, );
     } # close if ( $current_table eq 'wcdt_add' )
 } # close foreach my $row ( @metadata )
 
