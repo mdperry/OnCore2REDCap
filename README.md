@@ -1,5 +1,24 @@
 # OnCore2REDCap
+## Summary Description
 Perl code from a project for the UCSF HDFCCC
+## Overview
+
+## Background
+## List of Dumped OnCore Tables provided as MS-Excel Spreadsheets
+## Major Concepts
+
+
+
+### The OnCore Demographics Table contains the master list of Patient IDs
+
+### Most (but not all) Patients have at least one (1) Biopsy (i.e. a Baseline Biopsy)
+
+### Some Patients have a Progression Event
+#### A minority of patients have gt 1 Progression Event
+
+#### Select Patients had a second Biopsy Procedure from one (or more) metastatic sites; by definition, this is a "Progression Biopsy"
+
+#### Virtually every patient with a Baseline Biopsy sample/specimen received subsequent treatment, post-bx-tx, and each treatment *could* have a ProgressionDate; these **ALSO** define Progression Events
 This is a Perl script and several associated modules that parses a specific collection of TSV files and then
 generates a monolithic TSV table that is almost ready to uploaded/imported into a REDCap project (if the REDCap project
 has the correct matching Data Dictionary).
