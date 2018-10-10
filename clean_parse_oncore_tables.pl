@@ -6,7 +6,7 @@
 # 
 # 
 # 
-# Last Updated: 2018-10-01, Status: in development
+# Last Updated: 2018-10-09, Status: in development
 
 use strict;
 use warnings;
@@ -24,9 +24,7 @@ use Preenrollment;
 use Bloodlabs;
 use Postbiopsy qw(add_progression_dates extract_postbx_tx);
 use Assessment;
-# use Date::Manip::Date;
 use List::MoreUtils qw(uniq);
-# use DateTime;
 use Date::Calc qw ( Delta_Days );
 
 # Testing Version:
@@ -299,15 +297,17 @@ foreach my $file ( @table_names ) {
 		add_progression_dates( $id, \%input_records, \%timespans, );
 	    }
 
-            # if ( $input_records{FORM_DESC_} eq 'ECOG-Weight' ) {
-            #     add_ecog_dates( $id, \%input_records, \%timespans, );
-            #     if ( $input_records{VISIT_DATE} ) {
-            #        my $date = iso_date ( $input_records{VISIT_DATE} );
-	    # 	    if ( $input_records{SEGMENT} =~ m/Progression/ ) {
-            #            push @{$ecog_dates{$id}{Progression}}, $date;
-	    #       }
-	    #  }
-	    # }
+            if ( $input_records{FORM_DESC_} eq 'ECOG-Weight' ) {
+                # I _think_ this was a placeholder to remind me to make a parallel subroutine
+		# like above, but I have run out of time
+                # add_ecog_dates( $id, \%input_records, \%timespans, );
+                if ( $input_records{VISIT_DATE} ) {
+                    my $date = iso_date ( $input_records{VISIT_DATE} );
+	     	    if ( $input_records{SEGMENT} =~ m/Progression/ ) {
+                        push @{$ecog_dates{$id}{Progression}}, $date;
+	            }
+	        }
+	    }
 	}
     } # close while loop
 
@@ -351,7 +351,7 @@ foreach my $id ( keys( %timespans ) ) {
                 foreach my $bx ( 0..$#{$timespans{$id}{biopsy_dates}} ) {
                     my $bx_prog_num = $bx + 1;
 		    $timespans{$id}{'progression_' . $bx_prog_num} = $timespans{$id}{biopsy_dates}[$bx];
-		    push @{$timespans{$id}{merged}}, { $timespans{$id}{biopsy_dates}[$bx] => 'bx_prog_num_' . $bx_prog_num, };
+		    push @{$timespans{$id}{merged}}, $timespans{$id}{biopsy_dates}[$bx];
 		}
 	    }
 	    elsif ( scalar( @{$timespans{$id}{biopsy_dates}} ) == 3 ) {
@@ -360,7 +360,7 @@ foreach my $id ( keys( %timespans ) ) {
                 foreach my $bx ( 0..$#{$timespans{$id}{biopsy_dates}} ) {
                     my $bx_prog_num = $bx + 1;
 		    $timespans{$id}{'progression_' . $bx_prog_num} = $timespans{$id}{biopsy_dates}[$bx];
-		    push @{$timespans{$id}{merged}}, { $timespans{$id}{biopsy_dates}[$bx] => 'bx_prog_num_' . $bx_prog_num, };
+		    push @{$timespans{$id}{merged}}, $timespans{$id}{biopsy_dates}[$bx];
 		}
 	    }
 	    elsif ( scalar( @{$timespans{$id}{biopsy_dates}} ) == 4 ) {
@@ -369,84 +369,35 @@ foreach my $id ( keys( %timespans ) ) {
                 foreach my $bx ( 0..$#{$timespans{$id}{biopsy_dates}} ) {
                     my $bx_prog_num = $bx + 1;
 		    $timespans{$id}{'progression_' . $bx_prog_num} = $timespans{$id}{biopsy_dates}[$bx];
-		    push @{$timespans{$id}{merged}}, { $timespans{$id}{biopsy_dates}[$bx] => 'bx_prog_num_' . $bx_prog_num, };
+		    push @{$timespans{$id}{merged}}, $timespans{$id}{biopsy_dates}[$bx] ;
 		}
 	    }
 
 	    for my $tx ( 0..$#{$timespans{$id}{txprogdates}} ) {
-                my $tx_prog_num = $tx + 1;
-                push @{$timespans{$id}{merged}}, { $timespans{$id}{txprogdates}[$tx] => 'tx_prog_' . $tx_prog_num, } ;
+#                my $tx_prog_num = $tx + 1;
+                push @{$timespans{$id}{merged}}, $timespans{$id}{txprogdates}[$tx];
             } # close second for loop
             # Oh, Okay, I don't need a test now, because only the records that enter this inner code block
             # will have the merged hash key
-	    foreach my $element ( @{$timespans{$id}{merged}} ) {
-                my ($date) = keys ( %{$element} );
-		print STDERR "\$date contains $date\n";
 
-	    }
-
-            @{$timespans{$id}{sorted}} = sort { keys (%{$a}) cmp keys (%{$b}) } @{$timespans{$id}{merged}};
-            foreach my $element ( @{$timespans{$id}{sorted}} ) {
-                my ($date) = keys( %{$element} );
-		print STDERR "After sorting \$date contains $date\n";
-
-	    }
-            exit;
-
-
+            @{$timespans{$id}{sorted}} = sort { $a cmp $b } @{$timespans{$id}{merged}};
 	    # Make a copy of the sorted event array
             my @event_array = @{$timespans{$id}{sorted}};
-            # my $foo = $event_array[0];
-	    # my %bar = %{$$foo};
-	    # my $values = values(%bar);
-            # print "\n", Data::Dumper->new([\$values],[qw(values)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-            # exit;
             # Always use the first date in the @event_array as progression_1
             
-            ($timespans{$id}{progression_1}) = keys( %{$event_array[0]} );
+            $timespans{$id}{progression_1} = $event_array[0];
             # overwrite/reset the value of max for this sample
             $timespans{$id}{max} = 'progression_1';
-	    print STDERR "\$id contains $id\n";
             my %tracking = ();
 
-
-=pod
-
-
-        my $datestr1 = $new_records{$id};
-        my $datestr2 = $old_records{$id};
-
-        my $date1 = new Date::Manip::Date;
-        my $date2 = $date1->new_date;
-
-        $date1->parse($datestr1);
-        $date2->parse($datestr2);
-
-        my $value = $date1->cmp($date2);
-
-        if ( $new_records{$id} gt $old_records{$id} ) {
-            push( @download, $id );
-            push( @archive, $id );
-        }
-
-
-=cut
-	    
-	    
-	    # No maybe the way to do it is shift off the values of the copy
-	    # of the array?
             shift @event_array;
 	    # now iterate over all the events in the @event_array, there has to be at
 	    # least one more event because otherwise there would not have been a merge
 	    foreach my $event ( @event_array ) {
                 my ( $year1, $month1, $day1 ) = split /-/, $timespans{$id}{progression_1};
-		print STDERR "progression_1 \$year1 contains $year1\n\$month1 contains $month1\n\$day1 contains $day1\n";
-                my ($date) = keys( %{$event} );
-		print STDERR "progression_1 event \$date contains $date\n\n";
+                my $date = $event;
                 my ( $year2, $month2, $day2 ) = split /-/, $date;
-		print STDERR "progression_1 event \$year2 contains $year2\n\$month2 contains $month2\n\$day2 contains $day2\n";
 		my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
-                print STDERR "progression_1 event \$days contains $days\n";
                 if ( $days > 31 ) {
                     # if any of the other ordered events are more than 31 days after progression_1
 		    # then by definition the first one must be progression_2
@@ -459,87 +410,14 @@ foreach my $id ( keys( %timespans ) ) {
 		}
 	    } # close foreach my $event
 
-
-=pod
-
-Here the first date extraction was working, but the second one was not, and so it balked
-30985|mperry@Marcs-MacBook-Pro|OnCore2REDCap > ./clean_parse_oncore_tables.pl
-$year1 contains 2015
-$month1 contains 10
-$day1 contains 28
-Use of uninitialized value $month2 in concatenation (.) or string at ./clean_parse_oncore_tables.pl line 431.
-Use of uninitialized value $day2 in concatenation (.) or string at ./clean_parse_oncore_tables.pl line 431.
-$year2 contains 1
-$month2 contains
-$day2 contains
-Date::Calc::PP::Delta_Days(): Date::Calc::Delta_Days(): not a valid date at ./clean_parse_oncore_tables.pl line 432
-
-However, while I don't recall, I infer that I made a modification to how the variable was being extracted here
-because now it seems like the second date is good, and even the Delta_Days call works . . . and then something
-happens and it balks, I think on a different record?
-
-30985|mperry@Marcs-MacBook-Pro|OnCore2REDCap > ./clean_parse_oncore_tables.pl
-$year1 contains 2016
-$month1 contains 05
-$day1 contains 23
-$date contains 2016-09-01
-
-$year2 contains 2016
-$month2 contains 09
-$day2 contains 01
-$days contains 101
-Date::Calc::PP::Delta_Days(): Date::Calc::Delta_Days(): not a valid date at ./clean_parse_oncore_tables.pl line 455
-
-And the order in which the different dates get processed is maybe also changing, or something?
-30985|mperry@Marcs-MacBook-Pro|OnCore2REDCap > ./clean_parse_oncore_tables.pl
-$year1 contains 2015
-$month1 contains 10
-$day1 contains 08
-$date contains 2015-09-02
-
-$year2 contains 2015
-$month2 contains 09
-$day2 contains 02
-$days contains -36
-$year1 contains 2016
-$month1 contains 09
-$day1 contains 30
-$date contains 2016-09-02
-
-$year2 contains 2016
-$month2 contains 09
-$day2 contains 02
-$days contains -28
-$year1 contains 2016
-$month1 contains 09
-$day1 contains 30
-$date contains 2017-01-03
-
-$year2 contains 2017
-$month2 contains 01
-$day2 contains 03
-$days contains 95
-Date::Calc::PP::Delta_Days(): Date::Calc::Delta_Days(): not a valid date at ./clean_parse_oncore_tables.pl line 455
-
-But wait, something else is going wrong here because I don't think I should be getting so many 
-negative days like that.  So several at least two or three things to work on.
-
-=cut
-
-
-	    
-
             # either that last foreach loop set a date for progression_2, OR there is no
 	    # progression_2, so test.
-	    # Wait this is where I need a hash to track things
             if ( exists $tracking{progression_2} ) {
                 foreach my $event ( @event_array ) {
                     my ( $year1, $month1, $day1 ) = split /-/, $timespans{$id}{progression_2};		    
-                    my ($date) = keys ( %{$event} );
-		    print STDERR "progression_2 \$date contains $date\n";
+                    my $date = $event;
                     my ( $year2, $month2, $day2 ) = split /-/, $date;
 		    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
-                    print STDERR "progression_2 \$days contains $days\n";
 		    if ( $days > 31 ) {
                         $timespans{$id}{progression_3} = $date;
 			$timespans{$id}{max} = 'progression_3';
@@ -583,49 +461,23 @@ negative days like that.  So several at least two or three things to work on.
         $timespans{$id}{baseline} = undef;
         $timespans{$id}{progression_1} = $timespans{$id}{txprogdates}[0];
     }
+
+
+
+
+
 } # close foreach my $id
 
-print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-exit;
-
-
-
-=pod
-
-foreach my $id ( keys %timespans ) {
-    if ( scalar( @{$timespans{$id}{sorted}} ) == 1 ) {
-        $timespans{$id}{max} = 'baseline';
-        $timespans{$id}{baseline} = $timespans{$id}{sorted}[0];
-    }
-    elsif ( scalar( @{$timespans{$id}{sorted}} ) == 2 ) {
-        $timespans{$id}{max} = 'progression';
-        $timespans{$id}{baseline} = $timespans{$id}{sorted}[0];
-        $timespans{$id}{progression} = $timespans{$id}{sorted}[1];
-    }
-    elsif ( scalar( @{$timespans{$id}{sorted}} ) == 3 ) {
-        $timespans{$id}{max} = 'progression_2';
-        $timespans{$id}{baseline} = $timespans{$id}{sorted}[0];
-        $timespans{$id}{progression} = $timespans{$id}{sorted}[1];
-        $timespans{$id}{progression_2} = $timespans{$id}{sorted}[2];
-    }
-    elsif ( scalar( @{$timespans{$id}{sorted}} ) == 4 ) {    
-        $timespans{$id}{max} = 'progression_3';
-        $timespans{$id}{baseline} = $timespans{$id}{sorted}[0];
-        $timespans{$id}{progression} = $timespans{$id}{sorted}[1];
-        $timespans{$id}{progression_2} = $timespans{$id}{sorted}[2];
-        $timespans{$id}{progression_3} = $timespans{$id}{sorted}[3];
-    }
-} # close foreach my $id loop
-
-# Do the same thing, sort the dates of the ecog_dates for each ID for each segment
+# Sort the dates of the ecog_dates for each ID for each segment
 foreach my $id ( keys( %ecog_dates ) ) {
     foreach my $segment ( keys( $ecog_dates{$id} ) ) {
         @{$ecog_dates{$id}{$segment}} = sort { $a cmp $b } @{$ecog_dates{$id}{$segment}};
     } # close foreach my $segment loop
-} # close foreach my $id loop
+} # close foreach my $ id loop
 
-=cut
-
+    
+# print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
+# exit;
 
 
 # print "\n", Data::Dumper->new([\%ecog_dates],[qw(ecog_dates)])->Indent(1)->Quotekeys(0)->Dump, "\n";
