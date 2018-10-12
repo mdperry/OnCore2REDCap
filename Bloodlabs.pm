@@ -172,15 +172,26 @@ sub extract_labs {
     my %hash = %{shift @_};
     my $redcap = shift @_;
     my @fields_to_print = shift @_;
+    my %timespans = %{shift @_};
 
+    my $max = q{};
+    my $baseline = q{};
+    my $progression_1 = q{};
+    my $progression_2 = q{};
+    my $progression_3 = q{};
+    
     my $segment = q{};
     my $screening = q{};
     my $progression = q{};
     my $every_3_months = q{};
     my $event = q{};
-    my $psa_date = q{};
+    my $date = q{};
+    my $test_date = q{};
+    my $record_date = q{};
+    # my $psa_date = q{};
     my $visit_date = q{};
     my $instance = q{};
+    my $timepoint = q{};
     
     if ( $hash{SEGMENT} ) {
         $segment = $hash{SEGMENT};
@@ -189,6 +200,13 @@ sub extract_labs {
         next;
     }
 
+=pod
+    
+    # This was the original parsing strategy I used, before I had a deeper
+    # understanding of the data model for a patient's timeline
+    # For example, a time point can be both a Progression, AND
+    # every_three_months for a PSA-Test
+    
     if ( $segment =~ m/Screening/ ) {
         $screening = '1';
     }
@@ -201,21 +219,110 @@ sub extract_labs {
     else {
         next; # skipping 'Follow-up' for now
     }
+
+=cut
+
+    if ( $hash{VISIT_DATE} ) {
+        $record_date = iso_date( $hash{VISIT_DATE} );
+    }
+
+    # STEP 1. Figure out where this record lies in the event timeline
+
+    if ( $segment =~ m/Screening/ ) {
+        $screening = '1';
+    }
+    elsif ( $segment =~ m/Month/ ) {
+        # In the PSA and Blood Labs table, if a record matches the
+	# string 'Month' in the Segment column THEN by definition
+	# This is a baseline test post-biopsy but before any progressions
+        $baseline = '1';
+	$every_3_months = '1';
+    }
+    elsif ( exists $timespans{$patient_id} ) {
+        $max = $timespans{$patient_id}{max};
+        if ( $max eq 'progression_1' ) {
+            $progression_1 = 1;
+	}
+        elsif ( $max eq 'progression_2' ) {
+            $progression_2 = 1;
+	}
+        elsif ( $max eq 'progression_3' ) {
+	    $progression_3 = 1;
+	}
+        else {
+            die "Found an unanticipated value for \$max for patient $patient_id";
+	}
+    } # close if/else $segment
+
+    # Wait, I don't need to do anything special for $progression_1
+    # because that is just what I used to call 'Progression'
+    my ( $year1, $month1, $day1, $year2, $month2, $day2, ) = q{};
+    if ( $progression_2 or $progression_3 ) {
+        ( $year1, $month1, $day1 ) = split /-/, $record_date;
+	if ( $progression_3 ) {
+            # I check to see if the $record_date is
+	    # earlier than the $progression_2 date, or earlier than
+	    # than the progression_3 date.  Earlier than progression_2
+	    # is progression_1, by definition. Later than progression_2
+	    # but earlier than progression_3 is by definition progression_2
+	    # Otherwise this record is progression_3
+            ( $year2, $month2, $day2, ) = split /-/, $timespans{$patient_id}{progression_2};
+	    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+            if ( $days > 0 ) {
+		# the current record occurred before progression_2, so the value in $days
+		# is positive
+                $timepoint = 'progression_1';
+	    }
+	    else {
+		# the current record could be either progression_2 OR progression_3
+	        ( $year2, $month2, $day2, ) = split /-/, $timespans{$patient_id}{progression_3};
+	        my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                if ( $days > 0 ) {
+		    # the current event occured before the progression_3 timepoint
+		    # (but later than the progression_1 timepoint), so:
+		    $timepoint = 'progression_2';
+		}
+		else {
+		    # by the process of elimination, this is the only choice that is left
+		    $timepoint = 'progression_3';
+		}
+	    }           
+	}
+	elsif ( $progression_2 ) {
+            # I only need to check and see if the $record_date is
+	    # more recent than the $progression_1 date
+            ( $year2, $month2, $day2, ) = split /-/, $timespans{$patient_id}{progression_2};
+	    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+            if ( $days < 1 ) {
+                $timepoint = 'progression_2';
+	    }
+	    else {
+                $timepoint = 'progression_1';
+	    }
+	}
+    }
+    
     
     # Is the current record for a PSA Test?
     if ( $hash{PSA__COMPLEXED__DIRECT_MEASUREME} ) {
-        if ( $segment =~ m/Screening/ ) {
+        if ( $screening ) {
             $event = 'pre_study_screen_arm_2-BLANK';
         }
-        elsif ( $segment =~ m/Progression/ ) {
+        elsif ( $every_3_months ) {
+ 	    $event = 'every_3_months_arm_2-psa_lab_test';
+	}
+	elsif ( $progression_1 ) {
 	    $event = 'progression_arm_2-psa_lab_test';
         }
-        elsif ( $segment =~ m/Month/ ) {
- 	    $event = 'every_3_months_arm_2-psa_lab_test';
+        elsif ( $progression_2 ) {
+ 	    $event = 'progression_2_arm_2-psa_lab_test';
         }
+	elsif ( $progression_3 ) {
+	    $event = 'progression_3_arm_2-psa_lab_test';
+	}
 
-	if ( $hash{VISIT_DATE} ) {
-            $psa_date = iso_date( $hash{VISIT_DATE} );
+	if ( $record_date ) {
+            $psa_date = $record_date;
         }
 	# Is this a Screening PSA Test?
         if ( $screening ) {
@@ -224,7 +331,7 @@ sub extract_labs {
             $redcap->{$patient_id}{$event}{psa_value} = $hash{PSA__COMPLEXED__DIRECT_MEASUREME};
             $redcap->{$patient_id}{$event}{psa_lab_test_complete} = '2';
 	}
-        elsif ( $every_3_months || $progression ) {
+        elsif ( $every_3_months || $progression_1 || $progression_2 || $progression_3 ) {
             # Otherwise this is a repeating REDCap Instrument PSA Test and we
             # need to initialize all of the variables in the data structure
             # Q: For this specific patient_id, how many rows from the OnCore blood
@@ -253,7 +360,7 @@ sub extract_labs {
 	}
     } # close if ( $hash{PSA__COMPLEXED__DIRECT_MEASUREME} )
     else {
-        # The current record being process is therefore NOT a PSA test, which means that the blood lab
+        # The current record being processed is therefore NOT a PSA test, which means that the blood lab
         # results might go in the aggregator,
         # However it turns out that there are other rows, that are NOT Screening and Not PSA but
         # which may have blood lab tests to capture (I believe).  Any like that in REDCap now? Nope
@@ -283,14 +390,20 @@ sub extract_labs {
 	# DIGRESSION: If I really, really needed to I could incorporate the date in my processing so that
 	# Progression lab tests for the same date would be in one instrument, but right now I really cannot be bothered to get
 	# that fancy, so each OnCore Record for Progession will translate directly into a single REDCap record
-        if ( $segment =~ m/Screening/ ) {
+        if ( $screening ) {
             $event = 'pre_study_screen_arm_2-BLANK';
         }
-        elsif ( $segment =~ m/Progression/ ) {
+        elsif ( $progression_1 ) {
 	    $event = 'progression_arm_2-labs';
         }
+	elsif ( $progression_2 ) {
+            $event = 'progression_2_arm_2-labs';
+	}
+	elsif ( $progression_3 ) {
+            $event = 'progression_3_arm_2-labs';
+	}
 
-	if ( $progression ) {
+	if ( $progression_1 || $progression_2 || $progression_3 ) {
 	    if ( $redcap->{$patient_id}{$event} ) {
       	        my $value = scalar( keys %{$redcap->{$patient_id}{$event}} );
                 # if the array has defined elements then add '1' to that number, and that will
@@ -310,14 +423,14 @@ sub extract_labs {
 	    } # close foreach
         } # close if ( $progression )
 	
-        if ( $hash{VISIT_DATE} ) {
-            $lab_date = iso_date( $hash{VISIT_DATE} );
+        if ( $record_date ) {
+            $lab_date = $record_date;
         }	
 
 	if ( $screening ) {
             $redcap->{$patient_id}{$event}{lab_date} = $lab_date;
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             $redcap->{$patient_id}{$event}{$instance}{lab_date} = $lab_date;
 	}
 	        
@@ -331,7 +444,7 @@ sub extract_labs {
                 } # close if/else test
 	    }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             if ( $hash{ALKALINE_PHOSPHATASE} ) {
                 $redcap->{$patient_id}{$event}{$instance}{alp_value} = $hash{ALKALINE_PHOSPHATASE};
             }
@@ -350,7 +463,7 @@ sub extract_labs {
                 } # close if test
 	    }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 | $progression_2 | $progression_3 ) {
             if ( $hash{LDH_} ) {
                 $redcap->{$patient_id}{$event}{$instance}{ldh_value} = $hash{LDH_};
             }
@@ -389,7 +502,7 @@ sub extract_labs {
                 } # close if test
 	    }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             if ( $hash{HEMOGLOBIN} ) {
                 $redcap->{$patient_id}{$event}{$instance}{hgb_value} = $hash{HEMOGLOBIN};
             }
@@ -408,7 +521,7 @@ sub extract_labs {
                 } # close if test
 	    }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             if ( $hash{PLATELETS} ) {
                 $redcap->{$patient_id}{$event}{$instance}{plt_value} = $hash{PLATELETS};
             }
@@ -427,7 +540,7 @@ sub extract_labs {
                 } # close if test
 	    }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression-1 || $progression_2 || $progression_3 ) {
             if ( $hash{WBC} ) {
                 $redcap->{$patient_id}{$event}{$instance}{wbc_value} = $hash{WBC};
             }
@@ -447,7 +560,7 @@ sub extract_labs {
                 } # close if test
             }
 	}
-	elsif ( $progression ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             if ( $hash{WBC_NEUTROPHILS} ) {
                 $redcap->{$patient_id}{$event}{$instance}{wbc_n_value} = $hash{WBC_NEUTROPHILS};
             }
@@ -460,7 +573,7 @@ sub extract_labs {
             $redcap->{$patient_id}{$event}{albumin_value} = 'ND';
             $redcap->{$patient_id}{$event}{labs_complete} = '2';
         }
-        elsif ( $progression ) {
+        elsif ( $progression_1 || $progression_2 || $progession_3 ) {
             $redcap->{$patient_id}{$event}{$instance}{albumin_value} = 'ND';
             $redcap->{$patient_id}{$event}{$instance}{labs_complete} = '2';
         }
@@ -477,17 +590,6 @@ sub iso_date {
     }
     else {
         print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Bloodlabs\n";
-#	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
     }
     return $good_date;
 } # close sub iso_date

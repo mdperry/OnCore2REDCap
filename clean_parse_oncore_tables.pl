@@ -6,7 +6,7 @@
 # 
 # 
 # 
-# Last Updated: 2018-10-09, Status: in development
+# Last Updated: 2018-10-12, Status: in development
 
 use strict;
 use warnings;
@@ -50,7 +50,7 @@ su2c_biopsy_v3_new_filtered.tsv
 
 
 # Production Version:
-my @table_names = ( 'demographics_filtered.tsv', 'prostate_diagnosis_v4_new_filtered.tsv', 'su2c_pr_ca_tx_sumry_v2_new_filtered.tsv', 'patient_ECOG_scale_performance_status_and_weight_new_filtered.tsv', 'su2c_prior_tx_v3_new_filtered.tsv', 'blood_labs_v2_new_filtered.tsv', 'su2c_subsequent_treatment_v1_new_filtered.tsv', 'gu_disease_assessment_new_v3_filtered.tsv', 'su2c_biopsy_v3_new_filtered.tsv', 'wcdt_clinical_additional_data.tsv', );
+my @table_names = ( 'demographics_filtered.tsv', 'prostate_diagnosis_v4_new_filtered.tsv', 'su2c_pr_ca_tx_sumry_v2_new_filtered.tsv', 'patient_ECOG_scale_performance_status_and_weight_new_filtered.tsv', 'su2c_prior_tx_v3_new_filtered.tsv', 'blood_labs_v2_new_filtered.tsv', 'su2c_subsequent_treatment_v1_new_filtered.tsv', 'gu_disease_assessment_new_v3_filtered.tsv', 'su2c_biopsy_v3_new_filtered.tsv', 'su2c_specimen_v1_extra_progression_records.tsv', 'wcdt_clinical_additional_data.tsv', );
 
 =pod
 
@@ -151,6 +151,7 @@ my %types_of_tables = ( 'Prostate Diagnosis' => 'dx',
                         'SU2C Subsequent Treatment' => 'postbx_tx',
                         'GU Disease Assessment' => 'radiographic_assessment',
 			'SU2C GU Biopsy' => 'biopsy',
+                        'SU2C Specimen Collection' => 'spec',
 			'WCDT_Additional' => 'wcdt_add',
                       );
 
@@ -308,6 +309,17 @@ foreach my $file ( @table_names ) {
 	            }
 	        }
 	    }
+            if ( $input_records{FORM_DESC_} eq 'SU2C Specimen Collection' ) {
+                if ( $input_records{VISIT_DATE} ) {
+                    my $date = iso_date ( $input_records{VISIT_DATE} );
+                    # Originally, I thought that I would create an additional
+		    # hashref key for these extra specimen timepoints
+		    # but given that each of the 20 should have a single
+		    # baseline biopsy, I think it will be simplest to
+		    # add these dates to the array of biopsy_dates
+                    push @{$timespans{$id}{biopsy_dates}}, $date;
+		}
+	    }
 	}
     } # close while loop
 
@@ -461,12 +473,53 @@ foreach my $id ( keys( %timespans ) ) {
         $timespans{$id}{baseline} = undef;
         $timespans{$id}{progression_1} = $timespans{$id}{txprogdates}[0];
     }
-
-
-
-
-
 } # close foreach my $id
+
+print "patient_id\tbaseline\tmax\tprogression_1\tprogression_2\tprogression_3\tbx_count\ttx_count\tmerge_count\n";
+foreach my $id ( sort keys %timespans ) {
+    print "$id";
+    print "\t$timespans{$id}{baseline}";
+    print "\t$timespans{$id}{max}";
+    if ( $timespans{$id}{progression_1} ) {
+        print "\t$timespans{$id}{progression_1}";
+    }
+    else {
+        print "\t";
+    }
+    if ( $timespans{$id}{progression_2} ) {
+        print "\t$timespans{$id}{progression_2}";
+    }
+    else {
+        print "\t";
+    }
+    if ( $timespans{$id}{progression_3} ) {
+        print "\t$timespans{$id}{progression_3}";
+    }
+    else {
+        print "\t";
+    }
+    if ( $timespans{$id}{biopsy_dates} ) {
+        print "\t" . scalar( @{$timespans{$id}{biopsy_dates}} ) if (defined scalar( @{$timespans{$id}{biopsy_dates}} ) );
+    }
+    else {
+        print "\t";
+    }
+    if (  $timespans{$id}{txprogdates} ) {
+        print "\t" . scalar( @{$timespans{$id}{txprogdates}} ) if (defined scalar( @{$timespans{$id}{txprogdates}} ) );
+    }
+    else {
+        print "\t";
+    }
+    if ( $timespans{$id}{merged} ) {
+        print "\t" . scalar( @{$timespans{$id}{merged}} ) . "\n" if ( defined scalar( @{$timespans{$id}{merged}} ) );
+    }
+    else {
+        print "\t\n";
+    }
+    
+
+}
+exit;
 
 # Sort the dates of the ecog_dates for each ID for each segment
 foreach my $id ( keys( %ecog_dates ) ) {
@@ -616,7 +669,7 @@ Standard Blood Labs or just simply, Labs
         next if $hash{INTERNATIONAL_NORMALIZED_RATIO__};
         next if $hash{PARTIAL_THROMBOPLASTIN_TIME____P};
         next if $hash{PROTHROMBIN_TIME__PT_};
-        extract_labs ( $patient_id, \%hash, \%redcap, \@fields_to_print, );
+        extract_labs ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%timespans );
     } # close if ( $current_table eq 'BL' )
 
 =pod
