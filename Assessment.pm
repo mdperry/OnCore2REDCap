@@ -1,8 +1,11 @@
 package Assessment;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_assessments';
 our @EXPORT    = 'extract_assessments';
+use Date::Calc qw ( Delta_Days );
 
 
 sub extract_assessments {
@@ -12,11 +15,12 @@ sub extract_assessments {
     my @fields_to_print = @{shift @_};
     my $ass = shift @_;
     my @gu = shift @_;
+    my $timespans = shift @_;
 
 =head 2017-10-15 Newest version
+
 DOES NOT put any radiographic disease assessment data in the 
 aggregator, instead each record will be assigned either a screening or a visit repeating instrument
-
 
 =cut	        
 
@@ -31,13 +35,37 @@ aggregator, instead each record will be assigned either a screening or a visit r
     else {
         # However all 9 have a value in this field:
         $date = iso_date( $hash{VISIT_DATE} );
-        # So why isn't  this getting used? Bugger,
-        # Fucking bugger, there is a single whitespace
-	# in there
     }
 
-#    my $screening = q{};
     my $instance = '0';
+
+
+=pod
+
+This is where I need to insert the logic to get the correct timepoint event
+for each assessment
+
+The Choices from REDCap are:
+screening:
+pre_study_screen_arm_2-radiographic_disease_assessment
+
+baseline:
+every_3_months_arm_2-radiographic_disease_assessment
+
+progression (or progression_1) (biopsy_2):
+progression_arm_2-radiographic_disease_assessment
+_every_3_months_pos_arm_2-radiographic_disease_assessment <<< This is not annotated or tagged in the incoming OnCore tables, therefore this can never be an output choice for REDCap_
+followup_postbx_2_arm_2-radiographic_disease_assessment
+
+progression_2 (biopsy_3, bx_3):
+progression_2_arm_2-radiographic_disease_assessment
+_every_3_months_pos_arm_2b-radiographic_disease_assessment <<< This is not annotated or tagged in the incoming OnCore tables, therefore this can never be an output choice for REDCap_
+followup_postbx_3_arm_2-radiographic_disease_assessment
+
+progression_3:
+progression_3_arm_2-radiographic_disease_assessment
+
+=cut
 
     if ( $hash{SEGMENT} =~ m/Screening/ ) {
         $event = 'pre_study_screen_arm_2-radiographic_disease_assessment';
@@ -45,11 +73,70 @@ aggregator, instead each record will be assigned either a screening or a visit r
     elsif ( $hash{SEGMENT} =~ m/Month/ ) {
 	$event = 'every_3_months_arm_2-radiographic_disease_assessment';
     }
-    elsif ($hash{SEGMENT} =~ m/Progression/ ) {
-	$event = 'progression_arm_2-radiographic_disease_assessment';
-    }
-    elsif ($hash{SEGMENT} =~ m/Follow/ ) {
-	$event = 'followup_postbx_2_arm_2-radiographic_disease_assessment';
+    elsif ($hash{SEGMENT} =~ m/Follow|Progression/ ) {
+        if ( exists $timespans->{$patient_id} ) {
+	    if ( exists $timespans->{$patient_id}{biopsy_dates} ) {
+                my @biopsy_dates = sort @{$timespans->{$patient_id}{biopsy_dates}};
+                if ( scalar( @biopsy_dates ) == 1 ) {
+                    # there is one progression biopsy date, and therefore whether this assessment
+		    # was for a Follow Up or a Progression/Study Termination SEGMENT it has to be
+		    # after that biopsy (I believe)
+                    if ( $hash{SEGMENT} =~ m/Follow/ ) {
+  	                $event = 'followup_postbx_2_arm_2-radiographic_disease_assessment';
+		    }
+                    else {
+	                $event = 'progression_arm_2-radiographic_disease_assessment';
+		    }
+		}
+		elsif ( scalar( @biopsy_dates ) < 1 ) {
+                    # these are for patients who had progression events, but no progression
+		    # biopsies; the @biopsy_dates array is empty and contains no elements
+                    $event = 'progression_arm_2-radiographic_disease_assessment';
+		}
+                elsif ( scalar( @biopsy_dates ) > 1 ) {
+		    # there are two, or more, progression biopsy dates
+                    my ( $year1, $month1, $day1 ) = split /-/, $date;
+                    my ( $year2, $month2, $day2 ) = split /-/, $biopsy_dates[1];
+             	    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                    # If this post-biopsy assessment record occurred BEFORE the date of
+		    # The second progression biopsy, then this has to be a post-progression_1 assessment
+		    if ( $days > -1 ) {
+                        if ( $hash{SEGMENT} =~ m/Follow/ ) {
+	                    $event = 'followup_postbx_2_arm_2-radiographic_disease_assessment';
+			}
+			else {
+	                    $event = 'progression_arm_2-radiographic_disease_assessment';
+		        }
+ 		    }
+		    else {
+                        # If the number of days difference between the second progression
+			# biopsy and the assessment is positive, then for the Follow Up
+			# there is only one choice for this value
+                        if ( $hash{SEGMENT} =~ m/Follow/ ) {
+	                    $event = 'followup_postbx_3_arm_2-radiographic_disease_assessment';
+			}
+			else {
+                            # Progression Assessments can be progression, progression_2 or progression_3
+	                    if ( scalar( @biopsy_dates ) > 2 ) {
+                                my ( $year1, $month1, $day1 ) = split /-/, $date;
+                                my ( $year2, $month2, $day2 ) = split /-/, $biopsy_dates[2];
+             	                my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                                # If this progression assessment record occurred BEFORE the date of
+		                # The third progression biopsy, then this has to be a progression_2 assessment
+		                if ( $days > -1 ) {
+	                            $event = 'progression_2_arm_2-radiographic_disease_assessment';
+		                }
+		                else {
+			            # otherwise this assessment occured AFTER the third progression biopsy
+			            # and therefore has to be a progression_3 assessment
+	                            $event = 'progression_3_arm_2-radiographic_disease_assessment';
+		                }
+			    }
+		        }
+		    }
+	        } # close if biopsy dates array
+	    } # close outer if/else test
+        } # close if test to see if this record's patient_id is in the %timespans hash
     }
     else {
             die "I found a disease assessment with a SEGMENT I was not expecting";
@@ -76,7 +163,6 @@ If the answer is Yes, then we don't need to do anything to the instance number
 We just need to add this data and capture it in the right way in the data structure
 
 =cut
-
     
     # Does the passed in %ass hash (a global variable) already contain a record (or records) for THIS REDCap event
     # for this patient?
@@ -87,9 +173,6 @@ We just need to add this data and capture it in the right way in the data struct
 	# and added to the existing data AND THE INSTANCE NUMBER STAYS THE SAME, right??
         # Does this current record have the same date as any other screening event radiographic disease
         # assessments that have been processed for this patient thus far?
-
-	# I had an unless statement here, and I don't really think that is what I wanted, so I
-	# am going to change it to an if/else test
 
         if ( $ass->{$patient_id}{$event}{$date} ) {
 	    # if there is already data captured for this $event on
@@ -106,22 +189,6 @@ We just need to add this data and capture it in the right way in the data struct
 	    # use it again, right?
 
 	    $instance = $ass->{$patient_id}{$event}{$date}{'instance'};
-
-	    # Wait this has already been initialized, I don't need to do it again
-	    # AND initialize the hash keys for this event on this date		    
-	    # foreach my $field ( @gu ) {
-	    #     $ass->{$patient_id}{$event}{$date}{$field} = undef;
-	    # }                 
-
-	    # Explicitly label and pass in the date of the assessment (not
-	    # just keeping it as a hash key, higher up)	    
-	    # $ass->{$patient_id}{$event}{$date}{assess_date} = $date;		
-
-	    # Also, prepare a placeholder in the larger data structure that we
- 	    # are going to use later:
-	    # foreach my $field ( @fields_to_print ) {
-	    #     $redcap->{$patient_id}{$event}{$instance}{$field} = undef;
-	    # } # close foreach my $field
         } # close if test block
 	else {
             # IF there is no previous information captured for this $event
@@ -130,7 +197,7 @@ We just need to add this data and capture it in the right way in the data struct
 	    # This must be the first record with this date SO: I need to initialize the values for
 	    # this record in the %ass hash, AND I similarly need to initialize the values
 	    # for this record in the %redcap data structure (so that I can copy the values over later on)
-	    #
+
 	    # THEREFORE: count how many different dates there are for this specific event BEFORE you process the date
 	    # for the current record.  Whatever the number of hash keys, add a '1' and that will be the
 	    # number of this current instance WAIT, what happened to the add a 1 part?
@@ -197,11 +264,9 @@ have both a Bone Scan, AND some other kind of assessment, on a single visit, rig
 
 What my initial processing did not take into account was that there might be Screening records with different dates.
 In the original version the second date clobbers the first date recorded, like this:
-
     $ass{$patient_id}{'screening'}{assess_date} = $date;
 
 Whereas what it probably needs to say is this:
-
     $ass{$patient_id}{'screening'}{$date}{assess_date} = $date;
 
 Which necessitates some downstream changes to the processing, and possibly a new
@@ -211,7 +276,6 @@ Yes, I think so!
 
 In the a previous version of the script I used this code to assign values to 
 variables in the %ass hash but I am not setting these above
-
     # UPDATE: According to Jaselle's response to my detailed query, the OnCore field named 'FIRST_DOSE_DATE
     # most closely approximates the REDCap field 'assess_date'   
 
@@ -232,7 +296,7 @@ variables in the %ass hash but I am not setting these above
                        'PSMA PET' => 'assess_exam___4',
                        'NaF PET' => 'assess_exam___5',
                        'Other' => 'assess_exam___6',
-                );
+                     );
 
     # N.B. These mappings between the OnCore PROCEDURES and the REDCap
     # Exam Types have been confirmed by Jaselle (I had _MANY_ questions)
@@ -245,8 +309,9 @@ variables in the %ass hash but I am not setting these above
                             "Other (specify in comments)" => 'assess_exam___6',
                             "Bone Marrow Biopsy" => 'assess_exam___6',
                             "Chest X-Ray" => 'assess_exam___6',
-                      );
+                          );
 
+    # these false values are for a radio selection I think
     my %red_exams = ( "assess_exam___1" => "0",
                       "assess_exam___2" => "0",
                       "assess_exam___3" => "0",
@@ -260,6 +325,8 @@ variables in the %ass hash but I am not setting these above
             $red_exams{$procedure_types{$hash{PROCEDURE}}} = 1;
         }
         else {
+	    # If there is a value in the PROCEDURE field that is not in my %procedure_types hash
+	    # then by definition the Procedure type is Other
             $red_exams{assess_exam___6} = '1';
         } # close inner if/else test
     }
@@ -295,7 +362,6 @@ variables in the %ass hash but I am not setting these above
 	    else {
                 # If some earlier block of code triggered this flag for "other" then transfer the entire text from the 
                 # OnCore table's PROCEDURE field into what will beocme the REDCap table's other_exam variable
-		# Hold on a second, this could overwrite, no?
             	if ( $ass->{$patient_id}{$event}{$date}{other_exam} ) {
                     $ass->{$patient_id}{$event}{$date}{other_exam} .= "; $hash{PROCEDURE}";
 		}
@@ -357,7 +423,6 @@ then check off bone?
                       assess_sites___6 => undef,
 	      );
 
-
     if ( $hash{ARE_LESIONS_PRESENT_} ) {
         my $value = $hash{ARE_LESIONS_PRESENT_};
         push( @{$red_sites{assess_sites___6}}, $value, );
@@ -402,12 +467,12 @@ then check off bone?
             }
                 
             if ( $comment =~ m/Liver/i ) {
-                $redcap{assess_sites___3} = '1';
+                $red_sites{assess_sites___3} = '1';
                 $matched++;
             }
 
             if ( $comment =~ m/Soft Tissue/i ) {
-                $redcap{assess_sites___4} = '1';
+                $red_sites{assess_sites___4} = '1';
                 $matched++;
             }
             # There are going to be lots of examples, I think where something in the comments is not going to
@@ -420,9 +485,7 @@ then check off bone?
 	        # was no match to the previous four patterns, then check off other
                 $red_sites{assess_sites___5} = '1';
             }
-
             $ass->{$patient_id}{$event}{$date}{other_sites_mets}{$hash{COMMENTS2}}++;
-
         } # close outer foreach loop
     } # close if test for value in COMMENTS2 field
 
@@ -446,11 +509,13 @@ then check off bone?
         else { 
 	    # Everytime you update a value in the %ass hash make sure you are not
 	    # overwriting a previous value
-	    $ass->{$patient_id}{$event}{$date}{$site} = $red_sites{$site} unless $ass{$patient_id}{$event}{$date}{$site};
+	    $ass->{$patient_id}{$event}{$date}{$site} = $red_sites{$site} unless $ass->{$patient_id}{$event}{$date}{$site};
         } # close if/else test for ( $site eq 'assess_sites___6' )
     } # close foreach my $site loop
 
+
 =pod
+
 		
 Response 43 rows
 Progressive Disease 342 rows
@@ -506,6 +571,7 @@ an algorthim to capture that.
 
 =pod
 
+
 =HEAD1 These Notes here were in my main monolithic script, directly after the end
 of the code block above (and therefore before where the biopsy code used to start)
 I have moved the comments into this Assessment.pm Perl module just in case they
@@ -519,7 +585,7 @@ the PROCEDURE column, so I was wrong when I claimed that).
 The Bone Response and the RECIST Response are radio buttons so they are mutually
 exclusive for a given time point, is that correct? Hmmmm.
 
-I am going to say that unless there is a Bone Scan then the Bone response is 
+I am going to say that unless there is a Bone Scan then the Bone response
 is N/A okay?
 Hmmm, Jaselle clearly states that the RECISt response must be different than
 the COMPARED_WITH_PREVIOUS_SCAN.  Oh, lets see if there are any entries in COMPARED WITH PREVIOUS
@@ -537,18 +603,7 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, "for patient $patient_id in Package Assessment\n";
-#	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, "for a patient in Package Assessment\n";
     }
     # $good_date = $bad_date;
     return $good_date;

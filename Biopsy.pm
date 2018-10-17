@@ -3,6 +3,7 @@ package Biopsy;
 use base 'Exporter';
 our @EXPORT_OK = qw(extract_biopsies add_biopsy_dates);
 our @EXPORT    = qw(extract_biopsies add_biopsy_dates);
+use Date::Calc qw ( Delta_Days );
 
 sub add_biopsy_dates {
     my $patient_id = shift @_;
@@ -21,7 +22,10 @@ sub extract_biopsies {
     my %hash = %{ shift @_ };
     my $redcap = shift @_;
     my @fields_to_print = @{shift @_};
+    my $timespans = shift @_;
 
+    
+    
     # The first question to ask when processing the current record is if it is
     # a Screening biopsy record, OR a Progression Biopsy record.
     # If it is a Screening biopsy then this will be the event and instrument:
@@ -30,7 +34,6 @@ sub extract_biopsies {
     # of these:
     # biopsy_2_arm_2-biopsy_collection
     # biopsy_3_arm_2-biopsy_collection
-
 
 =pod
 
@@ -44,18 +47,91 @@ AND we will always need to create a new row in the data structure for every biop
     my $screening = q{};
     my $progression = q{};
     my $segment = $hash{SEGMENT};
-	
+    my $this_biopsy_record = q{};
+    my $progression_1 = q{};
+    my $progression_2 = q{};
+    my $progression_3 = q{};
+    my $biopsy_date = q{};
+
+    if ( $hash{DATE_OF_PROCEDURE} ) {
+        $biopsy_date = iso_date( $hash{DATE_OF_PROCEDURE} );
+    }
+
+    
+ # STEP 1. Figure out where this record lies in the event timeline
     if ( $segment =~ m/Screening/ ) {
         $screening = '1';
         $event = 'biopsy_arm_2-biopsy_collection';
     }
     elsif ( $segment =~ m/Progression/ ) {
         $progression = '1';
-        $event = 'biopsy_2_arm_2-biopsy_collection';	    
-    }
-    else {
-        die "Found a biopsy record with an unknown SEGMENT: $segment";
-    }
+        if ( exists $timespans->{$patient_id} ) {
+            if ( $timespans->{$patient_id}{max} eq 'progression_1' ) {
+                $progression_1 = '1';
+	    }
+	    elsif ( $timespans->{$patient_id}{max} eq 'progression_2' ) {
+                # Q: is this biopsy record progression_1 or progression_2 (given that
+		# this patient is know to have two progression events)?
+                my ( $year1, $month1, $day1 ) = split /-/, $timespans->{$patient_id}{progression_2};
+                my ( $year2, $month2, $day2 ) = split /-/, $biopsy_date;
+		my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                # IF the number of days between the progression_2 date and this biopsy date is
+		# zero, or larger, then this biopsy is a progression_2 biopsy
+                if ( $days > -1 ) {
+                    $progression_2 = '1';
+		}
+		else {
+                    # otherwise this biopsy date occured BEFORE the annoated progression_2 event
+		    # date and must therefore be a progression_1 biopsy, by definition
+                    $progression_1 = '1';
+		}
+	    }
+	    elsif ( $timespans->{$patient_id}{max} eq 'progression_3' ) {
+                # Q: is this biopsy record progression_1, progression_2, or progression_3 (given that
+		# this patient is know to have to progression events)?
+                my ( $year1, $month1, $day1 ) = split /-/, $timespans->{$patient_id}{progression_3};
+                my ( $year2, $month2, $day2 ) = split /-/, $biopsy_date;
+		my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                # IF the number of days between the progression_3 date and this biopsy date is
+		# zero, or larger, then this biopsy is a progression_3 biopsy
+                if ( $days > -1 ) {
+                    $progression_3 = '1';
+		}
+                else {
+                    # Using the same logic applied above, and having established that this biopsy
+		    # record occurred before the progression_3 event timepoint, test to see
+		    # if this biopsy record occurred on or after the progression_2 event timepoint:
+                    my ( $year1, $month1, $day1 ) = split /-/, $timespans->{$patient_id}{progression_2};
+                    my ( $year2, $month2, $day2 ) = split /-/, $biopsy_date;
+		    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
+                    if ( $days > -1 ) {
+		        $progression_2 = '1';
+		    }
+		    else {
+                        # otherwise this biopsy date occured BEFORE the annoated progression_2 event
+		        # date and must therefore be a progression_1 biopsy, by definition
+                        $progression_1 = '1';
+		    }          
+		}
+	    }
+	} # close if $segment/elsif
+	else {
+            print STDERR "WARNING: There is no entry in the \%timespans hash for this patient_id: $patient_id\n";
+	}
+
+	# Based on calculations above, set the event for this biopsy record
+        if ( $progression_1 ) {
+            $event = 'biopsy_2_arm_2-biopsy_collection';	    
+	}
+	elsif ( $progression_2 ) {
+            $event = 'biopsy_3_arm_2-biopsy_collection';	    
+	}
+	elsif ( $progression_3 ) {
+	    # N.B. There is no 3rd Progression Biopsy Collection
+	    # for the WCDT in the REDCap Data Model (for some unknown reason)
+            $event = 'biopsy_3_arm_2-biopsy_collection';	    
+	}
+    } # close if/else $segment
     
     # Q: For this patient_id, how many rows (records) from the OnCore biopsy_collection
     # table have we already processed (if any)?
@@ -79,9 +155,8 @@ AND we will always need to create a new row in the data structure for every biop
         $redcap->{$patient_id}{$event}{$instance}{$field} = undef;
     } # close foreach loop
 	
-    if ( $hash{DATE_OF_PROCEDURE} ) {
-        my $last_visit = iso_date( $hash{DATE_OF_PROCEDURE} );
-        $redcap->{$patient_id}{$event}{$instance}{bx_date} = $last_visit;
+    if ( $biopsy_date ) {
+        $redcap->{$patient_id}{$event}{$instance}{bx_date} = $biopsy_date;
     }
 
     # Set the Dropdown option for the biopsy event timepoint in REDCap
@@ -183,17 +258,6 @@ sub iso_date {
     }
     else {
         print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Biopsy\n";
-#	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
     }
     return $good_date;
 } # close sub iso_date

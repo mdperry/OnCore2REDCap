@@ -6,7 +6,7 @@
 # 
 # 
 # 
-# Last Updated: 2018-10-12, Status: in development
+# Last Updated: 2018-10-13, Status: in development
 
 use strict;
 use warnings;
@@ -475,6 +475,8 @@ foreach my $id ( keys( %timespans ) ) {
     }
 } # close foreach my $id
 
+=pod
+
 print "patient_id\tbaseline\tmax\tprogression_1\tprogression_2\tprogression_3\tbx_count\ttx_count\tmerge_count\n";
 foreach my $id ( sort keys %timespans ) {
     print "$id";
@@ -521,6 +523,9 @@ foreach my $id ( sort keys %timespans ) {
 }
 exit;
 
+=cut
+
+
 # Sort the dates of the ecog_dates for each ID for each segment
 foreach my $id ( keys( %ecog_dates ) ) {
     foreach my $segment ( keys( $ecog_dates{$id} ) ) {
@@ -530,11 +535,7 @@ foreach my $id ( keys( %ecog_dates ) ) {
 
     
 # print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-# exit;
-
-
 # print "\n", Data::Dumper->new([\%ecog_dates],[qw(ecog_dates)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-# exit;
     
 # STEP 2. Process each row, one at a time
 foreach my $row ( @metadata ) {
@@ -593,7 +594,7 @@ GU Biopsy Collection
     
     if ( $current_table eq 'biopsy' ) {
         next if $hash{NOT_APPLICABLE_OR_MISSING};
-        extract_biopsies( $patient_id, \%hash, \%redcap, \@fields_to_print, );    
+        extract_biopsies( $patient_id, \%hash, \%redcap, \@fields_to_print, \%timespans, );    
     } # close if $current_table eq biopsy block
 
 
@@ -655,6 +656,7 @@ each row will be stored under here:
 	next unless ( $hash{DRUG_NAME} || $hash{TREATMENT_DETAILS} );
         extract_preenrollment_tx ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%red_drug_names, );
     } # close if ( $current_table eq 'pre_tx' )
+
  
 =pod
    
@@ -669,7 +671,7 @@ Standard Blood Labs or just simply, Labs
         next if $hash{INTERNATIONAL_NORMALIZED_RATIO__};
         next if $hash{PARTIAL_THROMBOPLASTIN_TIME____P};
         next if $hash{PROTHROMBIN_TIME__PT_};
-        extract_labs ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%timespans );
+        extract_labs ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%timespans, );
     } # close if ( $current_table eq 'BL' )
 
 =pod
@@ -681,7 +683,8 @@ Subsequent Patient Treatment, or, Postbiopsy Therapy
     if ( $current_table eq 'postbx_tx' ) {
         next if $hash{NOT_APPLICABLE_OR_MISSING};
 	next unless ( $hash{DRUG_NAME} || $hash{TREATMENT_DETAILS} );
-        extract_postbx_tx ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%red_drug_names, );
+	next unless ( $hash{START_DATE} );
+        extract_postbx_tx ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%red_drug_names, \%timespans, );
     } # close if ( $current_table eq 'postbx_tx' )
 
 =pod
@@ -702,14 +705,14 @@ This is an example of a REDCap repeating instrument
 	# The call to the extract_assessments sub-routine in the Assessment.pm module
 	# is passed the $patient_id for this record, and then references to the %hash for this
 	# record, the global %redcap hash, the global @fields_to_print array, the sort of
-	# global %ass hash, and the reference array @gu
+	# global %ass hash, and the reference array @gu. 2018-10-16: Also, the %timespans hash
 	#
 	# 2018-07-12 Comment
 	# Whilst troubleshooting & debugging most recently, I noticed that there was at least one record
 	# That had an entry in the NOT_APPLICABLE_OR_MISSING column so I am going
 	# To add this test here as well (previously my script did not test this)
         next if $hash{NOT_APPLICABLE_OR_MISSING} =~ /applicable/i;
-        extract_assessments ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%ass, \@gu, );
+        extract_assessments ( $patient_id, \%hash, \%redcap, \@fields_to_print, \%ass, \@gu, \%timespans, );
     } # close if ( $current_table eq 'radiographic_assessment' ) 
 
 =pod    

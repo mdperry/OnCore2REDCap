@@ -3,6 +3,7 @@ package Bloodlabs;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_labs';
 our @EXPORT    = 'extract_labs';
+use Date::Calc qw ( Delta_Days );
 
 =pod
    
@@ -98,7 +99,7 @@ there can/will be multiple assessments every 3 months.  So it is not the fact th
 an instrument gets its data stored in the Screening Arm that makes it non-repeating
 it is that there are NOT multiple Screening arm assessments.  If there are
 multiple Screening arm anything (instrument) then the results of the form
-cannot, by definition, be a repeating instrument.
+must, by definition, be a repeating instrument.
 
 UPDATE, instead of trying to guess and infer I actually went in and figured 
 out which instruments in the current project are repeating.
@@ -188,7 +189,6 @@ sub extract_labs {
     my $date = q{};
     my $test_date = q{};
     my $record_date = q{};
-    # my $psa_date = q{};
     my $visit_date = q{};
     my $instance = q{};
     my $timepoint = q{};
@@ -199,6 +199,7 @@ sub extract_labs {
     else {
         next;
     }
+
 
 =pod
     
@@ -227,7 +228,6 @@ sub extract_labs {
     }
 
     # STEP 1. Figure out where this record lies in the event timeline
-
     if ( $segment =~ m/Screening/ ) {
         $screening = '1';
     }
@@ -239,6 +239,7 @@ sub extract_labs {
 	$every_3_months = '1';
     }
     elsif ( exists $timespans{$patient_id} ) {
+        $progression = '1';
         $max = $timespans{$patient_id}{max};
         if ( $max eq 'progression_1' ) {
             $progression_1 = 1;
@@ -250,7 +251,9 @@ sub extract_labs {
 	    $progression_3 = 1;
 	}
         else {
-            die "Found an unanticipated value for \$max for patient $patient_id";
+	    $timespans{$patient_id}{max} = 'progression_1';
+            $progression_1 = 1;
+            # die "Found an unanticipated value for \$max for patient $patient_id";
 	}
     } # close if/else $segment
 
@@ -302,7 +305,6 @@ sub extract_labs {
 	}
     }
     
-    
     # Is the current record for a PSA Test?
     if ( $hash{PSA__COMPLEXED__DIRECT_MEASUREME} ) {
         if ( $screening ) {
@@ -320,7 +322,19 @@ sub extract_labs {
 	elsif ( $progression_3 ) {
 	    $event = 'progression_3_arm_2-psa_lab_test';
 	}
-
+        elsif ( $progression ) {
+            # this is the test for those 33 patients who have Progression records but
+	    # no confirmed Progression Event timepoint in any of the tables
+	    $event = 'progression_arm_2-psa_lab_test';
+            # If the code enters this if test then I am going to set this value
+	    # to True so that in subsequent tests I don't have to keep
+	    # testing for the special condition above
+            $progression_1 = 1;
+	}
+	else {
+            die "Patient $patient_id has at least one PSA Test record with an unanticipated SEGMENT in OnCore";
+	}
+	
 	if ( $record_date ) {
             $psa_date = $record_date;
         }
@@ -402,7 +416,14 @@ sub extract_labs {
 	elsif ( $progression_3 ) {
             $event = 'progression_3_arm_2-labs';
 	}
-
+        elsif ( $progession ) {
+	    $event = 'progression_arm_2-labs';
+	    $progression = 1;
+	}
+	else {
+            die "Patient $patient_id has at least one Blood labs record with an unanticipated SEGMENT in OnCore";
+	}
+	
 	if ( $progression_1 || $progression_2 || $progression_3 ) {
 	    if ( $redcap->{$patient_id}{$event} ) {
       	        my $value = scalar( keys %{$redcap->{$patient_id}{$event}} );
