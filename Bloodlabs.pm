@@ -1,7 +1,7 @@
 package Bloodlabs;
 
 use strict;
-use warnings;
+#use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_labs';
 our @EXPORT    = 'extract_labs';

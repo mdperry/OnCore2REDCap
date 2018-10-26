@@ -197,6 +197,146 @@ How does my script handle those, as well? I am going to check on that.
         $event = 'biopsy_arm_2-biopsy_collection';
 	$serum_event = 'biopsy_arm_2-serum_neuroendocrine_markers';
     }
+    else {
+        # We are parsing the records from Rahul's "additional data table"  If the value
+	# in $timepoint is not 'Baseline' then it can only be one of: 'Progression1', 'Progression2'
+	# or 'Progression3'.  I need to query the %redcap data structure to see how many
+	# progression biopsies were collected for this patient.  The problem is that
+	# this simple naming system that Rahul is using in his table just reflects
+	# the time series sequence of biopsies, and not the actual
+	# progression events themselves.  Progression events (which may, or may not
+	# be accompanied by a progression biopsy) are typically defined by
+	# either a radiographic_assessment (probably in most cases), or possibly by
+	# a spike in a PSA blood test.  Typically the patient is
+	# receiving some sort of post-biopsy treatment or therapy at the time
+	# and when the progression event is detected then that drug or treatment
+	# is stopped (so that another one can be started), and that treatment
+	# gets a value for its treatment progression date (txprogdate)
+	# My %redcap data structure tries to capture all of this progression information
+	# as accurately as possible, based on the incoming OnCore tables, and therefore
+	# The progression biopsy events in Rahul's table do not always map correctly
+	# to the timeline I have built up.  I want to properly attach all of the
+	# fields in the additional data table to the correct progression biopsies
+	# so I need to figure out how many progression biopsies were collected
+	# AND which progression event I associated those biopsies with
+        my @biopsy_names = grep {/biopsy_collection/} keys %{$redcap->{$patient_id}};
+        my @prog_names = sort grep { ! /biopsy_arm_2/ } @biopsy_names;
+	my $num_p_biopsies = scalar( @prog_names );
+	if ( $num_p_biopsies > 1 ) {
+	    # this is working
+	    # print "TRUE Found $num_p_biopsies gt 1 for $patient_id\n";
+            # iterate over the sorted list of biopsy names, and see if they
+	    # already have a CLIA value  filled in
+	    foreach my $name ( @prog_names ) {
+                # print "\$name contains $name\n";
+                # if the clia value has already been filled in for this progression name
+		# then either there is another instance (in two cases) or check the
+		# next name in the array
+
+
+
+=pod
+
+		    
+		if ( $redcap->{$patient_id}{$name}{1}{'clia'} ) {		
+		if ( defined $redcap->{$patient_id}{$name}{1}{'clia'} ) {
+
+		if ( exists $redcap->{$patient_id}{$name}{1}{'clia'} ) {
+
+                    if ( exists $redcap->{$patient_id}{$name}{2} ) {
+                        if ( $name eq 'biopsy_2_arm_2-biopsy_collection' ) {
+                            $event = 'biopsy_2_arm_2-biopsy_collection';
+                            $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
+                        }
+                        elsif ( $name eq 'biopsy_3_arm_2-biopsy_collection' ) {
+                            if ( $timespans->{$patient_id}{max} eq 'progression_2' ) {
+                                $event = 'biopsy_3_arm_2-biopsy_collection';
+                                $serum_event = 'biopsy_3_arm_2-serum_neuroendocrine_markers';
+                            }  
+                            elsif ( $timespans->{$patient_id}{max} eq 'progression_3' ) {
+                               $event = 'biopsy_3_arm_2-biopsy_collection';
+                               $serum_event = 'progression_3_arm_2-serum_neuroendocrine_markers';	
+                            }
+		    }
+                    else {
+                        next;
+		    }
+
+=cut
+
+
+		if ( $redcap->{$patient_id}{$name}{1}{'clia'} ) {
+		    # If this evaluates to TRUE that means that the hash value
+		    # is defined, and that the hash key exists, so this was already
+		    # filled in, right? So go on to the next element in the array
+                    next;
+		}
+	        else {
+                    # If you reach here that should mean that for this
+		    # $name/event the clia value in this record has not been
+		    # processed yet, so figure out which one it is, assign, it and
+		    # then get out, because while there may be others
+		    # to evaluate, you will get them next time
+                    if ( $name eq 'biopsy_2_arm_2-biopsy_collection' ) {
+                       $event = 'biopsy_2_arm_2-biopsy_collection';
+                       $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
+                       last;
+		    }
+                    elsif ( $name eq 'biopsy_3_arm_2-biopsy_collection' ) {
+                        if ( $timespans->{$patient_id}{max} eq 'progression_2' ) {
+                            $event = 'biopsy_3_arm_2-biopsy_collection';
+                            $serum_event = 'biopsy_3_arm_2-serum_neuroendocrine_markers';
+                            last;
+			}  
+                        elsif ( $timespans->{$patient_id}{max} eq 'progression_3' ) {
+                           $event = 'biopsy_3_arm_2-biopsy_collection';
+                           $serum_event = 'progression_3_arm_2-serum_neuroendocrine_markers';	
+                           last;
+		       }
+	            }
+		}
+	    }
+	}
+        elsif ( $num_p_biopsies == 1 ) {
+            my @num_instances = keys %{$redcap->{$patient_id}{$prog_names[0]}};
+            if ( scalar( @num_instances ) > 1 ) {
+		next;
+                # die "Patient $patient_id has more than one $prog_names[0] biopsy instances collected";
+	    }
+            else {
+                if ( $prog_names[0] eq 'biopsy_2_arm_2-biopsy_collection' ) {
+                   $event = 'biopsy_2_arm_2-biopsy_collection';
+                   $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
+                }
+                elsif ( $prog_names[0] eq 'biopsy_3_arm_2-biopsy_collection' ) {
+                    if ( $timespans->{$patient_id}{max} eq 'progression_2' ) {
+                        $event = 'biopsy_3_arm_2-biopsy_collection';
+                        $serum_event = 'biopsy_3_arm_2-serum_neuroendocrine_markers';
+                    }  
+                    elsif ( $timespans->{$patient_id}{max} eq 'progression_3' ) {
+                       $event = 'biopsy_3_arm_2-biopsy_collection';
+                       $serum_event = 'progression_3_arm_2-serum_neuroendocrine_markers';	
+                    }
+	        }
+		else {
+                    die "WTF?!? found a progression biopsy name for patient $patient_id that was completely unexpected";
+		}
+	    }
+        }
+	else {
+            # if you reach here then this is DTB-127 which DOES have a progression biopsy in Rahul's table but is missing a
+	    # progression biopsy in the OnCore Biopsy table
+            # So here I am breaking my earlier rule and am inserting an entire record into the
+	    # %redcap hash
+            $event = 'biopsy_2_arm_2-biopsy_collection';
+            $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
+	}
+    }
+
+
+=pod
+
+    # Previous logic sieve:
     elsif ( $timepoint eq 'Progression' ) {
         $event = 'biopsy_2_arm_2-biopsy_collection';
         $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
@@ -210,6 +350,17 @@ How does my script handle those, as well? I am going to check on that.
         $serum_event = 'progression_3_arm_2-serum_neuroendocrine_markers';	
     }
 
+Some Debugging:
+print "\$patient_id: $patient_id, \$event: $event, \$instance: $instance, \$serum_event: $serum_event\n";
+$patient_id: DTB-022, $event: biopsy_arm_2-biopsy_collection, $instance: 1, $serum_event: biopsy_arm_2-serum_neuroendocrine_markers
+$patient_id: DTB-022, $event: , $instance: 1, $serum_event:
+$patient_id: DTB-022, $event: , $instance: 1, $serum_event:
+
+Okay, so whatever I am trying with that progression stuff it is not working
+
+=cut
+
+    # print "\$patient_id: $patient_id, \$event: $event, \$instance: $instance, \$serum_event: $serum_event\n";
 
     if ( exists $seen->{$patient_id}{$event}{$instance} ) {
         # if you pass this test then that means we have already processed a record for this

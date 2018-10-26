@@ -789,8 +789,9 @@ foreach my $id ( sort keys %ass ) {
 
 # print_jsonl( \@metadata );
 # print_jsonl( \%redcap );
-print "\n", Data::Dumper->new([\%redcap],[qw(redcap)])->Indent(1)->Quotekeys(0)->Dump, "\n";    
-exit;
+# print "\n", Data::Dumper->new([\%redcap],[qw(redcap)])->Indent(1)->Quotekeys(0)->Dump, "\n";    
+# exit;
+
 print_redcap();
 exit;
 
