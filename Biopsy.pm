@@ -1,5 +1,7 @@
 package Biopsy;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = qw(extract_biopsies add_biopsy_dates);
 our @EXPORT    = qw(extract_biopsies add_biopsy_dates);
@@ -24,7 +26,6 @@ sub extract_biopsies {
     my @fields_to_print = @{shift @_};
     my $timespans = shift @_;
 
-    
     
     # The first question to ask when processing the current record is if it is
     # a Screening biopsy record, OR a Progression Biopsy record.
@@ -52,22 +53,25 @@ AND we will always need to create a new row in the data structure for every biop
     my $progression_2 = q{};
     my $progression_3 = q{};
     my $biopsy_date = q{};
+    my $biopsy_timepoint = q{};
 
     if ( $hash{DATE_OF_PROCEDURE} ) {
         $biopsy_date = iso_date( $hash{DATE_OF_PROCEDURE} );
     }
 
     
- # STEP 1. Figure out where this record lies in the event timeline
+    # STEP 1. Figure out where this record lies in the event timeline
     if ( $segment =~ m/Screening/ ) {
         $screening = '1';
         $event = 'biopsy_arm_2-biopsy_collection';
+        $biopsy_timepoint = '1';
     }
     elsif ( $segment =~ m/Progression/ ) {
         $progression = '1';
         if ( exists $timespans->{$patient_id} ) {
             if ( $timespans->{$patient_id}{max} eq 'progression_1' ) {
                 $progression_1 = '1';
+		$biopsy_timepoint = '2';
 	    }
 	    elsif ( $timespans->{$patient_id}{max} eq 'progression_2' ) {
                 # Q: is this biopsy record progression_1 or progression_2 (given that
@@ -79,11 +83,13 @@ AND we will always need to create a new row in the data structure for every biop
 		# zero, or larger, then this biopsy is a progression_2 biopsy
                 if ( $days > -1 ) {
                     $progression_2 = '1';
+		    $biopsy_timepoint = '3';
 		}
 		else {
                     # otherwise this biopsy date occured BEFORE the annoated progression_2 event
 		    # date and must therefore be a progression_1 biopsy, by definition
                     $progression_1 = '1';
+		    $biopsy_timepoint = '2';
 		}
 	    }
 	    elsif ( $timespans->{$patient_id}{max} eq 'progression_3' ) {
@@ -96,6 +102,7 @@ AND we will always need to create a new row in the data structure for every biop
 		# zero, or larger, then this biopsy is a progression_3 biopsy
                 if ( $days > -1 ) {
                     $progression_3 = '1';
+    		    $biopsy_timepoint = '4';
 		}
                 else {
                     # Using the same logic applied above, and having established that this biopsy
@@ -106,11 +113,13 @@ AND we will always need to create a new row in the data structure for every biop
 		    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
                     if ( $days > -1 ) {
 		        $progression_2 = '1';
+    		        $biopsy_timepoint = '3';			
 		    }
 		    else {
                         # otherwise this biopsy date occured BEFORE the annoated progression_2 event
 		        # date and must therefore be a progression_1 biopsy, by definition
                         $progression_1 = '1';
+    		        $biopsy_timepoint = '2';			
 		    }          
 		}
 	    }
@@ -160,13 +169,8 @@ AND we will always need to create a new row in the data structure for every biop
     }
 
     # Set the Dropdown option for the biopsy event timepoint in REDCap
-    # depending on which of these two variables evaluates to 'True'
-    if ( $screening ) {
-        $redcap->{$patient_id}{$event}{$instance}{bx_timepoint} = '1';
-    }
-    elsif ( $progression ) {
-        $redcap->{$patient_id}{$event}{$instance}{bx_timepoint} = '2';
-    }
+    $redcap->{$patient_id}{$event}{$instance}{bx_timepoint} = $biopsy_timepoint;
+
 
     my $name = q{};
     if ( $hash{OfPatienttookaSteroidint} ) {
@@ -257,59 +261,11 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Biopsy\n";
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for a patient in Package Biopsy\n";
     }
     return $good_date;
 } # close sub iso_date
 
-=pod
-
-These are some notes that I had in my previous longer version of the
-parse_oncore_tables.pl script and now I moved them over here
-
-<2017-09-05 Tue 10:21>
-Q1: How many biopsies could a patient have? For example, are any
-OnCore patients with NO biopsies?  How many with multiple biopsies (I
-can see a few examples of this just from the first page of the table).
-
-There are 246 unique SEQUENCE_NO_ patient ids in the first column of
-the su2c_biopsy_v3_filtered.tsv table. Huh, the demographics table
-from OnCore has 256 unique SEQUENCE_NO_ patient_ids, so possibly 6
-patients in OnCore with a demographics record do not have a biopsy?  I
-am going to make a list of those six for future reference.
-
-Of the 246 patient_ids in this biopsy table, ALL of them have matching
-IDs in the demographics table.  From the converse search, I confirmed
-that all of the 246 patient_ids in the biopsy table match a record in
-the demographics table.  These six patient_ids, from the demographics
-table, however, do NOT have a matching biopsy (For some reason?):
-100 HAS pr_ca_tx record & subsequent_tx record
-207 LACKS pr_ca_tx record & subsequent_tx record
-245 LACKS pr_ca_tx record & subsequent_tx record
-254 LACKS pr_ca_tx record & subsequent_tx record
-DTB-VA-172 LACKS pr_ca_tx record & subsequent_tx record
-DTB-VA-179 LACKS pr_ca_tx record & subsequent_tx record
-
-UPDATE 2017-11-03 I wrote to Alex and Jaselle about this and they said that these are
-patients from another center, and we don't have access to the original data (if the other
-center did not fill it in), and therefore I can just treat them as empty.  This has a 
-ramification which is that I cannot use the biopsy, and specifically the event/timepoint of
-a patient's biopsy as my primary classifier at a high level in the hierarchy because otherwise
-These six patients would basically not exist.
-
-What about multiple biopsies? Most patients have a single biopsy, but
-many have two, and some three, a single patient has had 5 biopsies. So
-the range is from zero up to five, it would seem.
-
-if ( there is a steroid drug name specifed in one column ) {
-
-}
-OR ( another column contains a Yes ) {
-    THEN the patient was administerd steroids, but we may 
-    not know the name.  Okay?
-} 
-
-=cut
 
 
 1;

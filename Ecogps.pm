@@ -1,5 +1,7 @@
 package Ecogps;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_ecogps';
 our @EXPORT    = 'extract_ecogps';
@@ -24,7 +26,9 @@ sub extract_ecogps {
         $event = 'pre_study_screen_arm_2-physical_exam';
     }	
     elsif ( $hash{SEGMENT} =~ m/Progression/ ) {
-        if ( scalar( @{$ecog_dates->{$patient_id}{Progression}} ) > 1 ) {
+        # Previous version, was dropping things
+        # if ( scalar( @{$ecog_dates->{$patient_id}{Progression}} ) > 1 ) {
+        if ( scalar( @{$ecog_dates->{$patient_id}{Progression}} ) > 0 ) {	    
             if ( exists $ecog_dates->{$patient_id}{count} ) {
                 $element = $ecog_dates->{$patient_id}{count};
                 $ecog_dates->{$patient_id}{count}++;
@@ -43,9 +47,8 @@ sub extract_ecogps {
  	        $event = 'progression_3_arm_2-physical_exam';           
 	    }
         }
-        else {
-	    $event = 'progression_arm_2-BLANK';
-	}
+        # FYI: The previous version was dropping some progression ecogps test
+	# Apparently that scalar array test never evaluates to 0
     }		
 
 
@@ -85,7 +88,7 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Ecogps\n";
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient in Package Ecogps\n";
     }
     return $good_date;
 } # close sub iso_date

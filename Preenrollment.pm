@@ -1,5 +1,7 @@
 package Preenrollment;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_preenrollment_tx';
 our @EXPORT    = 'extract_preenrollment_tx';
@@ -632,18 +634,7 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Preenrollment\n";
-# 	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for a patient in Package Preenrollment\n";
     }
     return $good_date;
 } # close sub iso_date

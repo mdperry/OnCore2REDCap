@@ -1,5 +1,7 @@
 package Bloodlabs;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_labs';
 our @EXPORT    = 'extract_labs';
@@ -192,6 +194,8 @@ sub extract_labs {
     my $visit_date = q{};
     my $instance = q{};
     my $timepoint = q{};
+    my $psa_date = q{};
+    my $lab_date = q{};
     
     if ( $hash{SEGMENT} ) {
         $segment = $hash{SEGMENT};
@@ -403,7 +407,7 @@ sub extract_labs {
 	# record then . . . we do not have a data structure pre-initialized so we need to create one.
 	# DIGRESSION: If I really, really needed to I could incorporate the date in my processing so that
 	# Progression lab tests for the same date would be in one instrument, but right now I really cannot be bothered to get
-	# that fancy, so each OnCore Record for Progession will translate directly into a single REDCap record
+	# that fancy, so each OnCore Record for Progression will translate directly into a single REDCap record
         if ( $screening ) {
             $event = 'pre_study_screen_arm_2-BLANK';
         }
@@ -416,7 +420,7 @@ sub extract_labs {
 	elsif ( $progression_3 ) {
             $event = 'progression_3_arm_2-labs';
 	}
-        elsif ( $progession ) {
+        elsif ( $progression ) {
 	    $event = 'progression_arm_2-labs';
 	    $progression = 1;
 	}
@@ -484,7 +488,7 @@ sub extract_labs {
                 } # close if test
 	    }
 	}
-	elsif ( $progression_1 | $progression_2 | $progression_3 ) {
+	elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             if ( $hash{LDH_} ) {
                 $redcap->{$patient_id}{$event}{$instance}{ldh_value} = $hash{LDH_};
             }
@@ -594,7 +598,7 @@ sub extract_labs {
             $redcap->{$patient_id}{$event}{albumin_value} = 'ND';
             $redcap->{$patient_id}{$event}{labs_complete} = '2';
         }
-        elsif ( $progression_1 || $progression_2 || $progession_3 ) {
+        elsif ( $progression_1 || $progression_2 || $progression_3 ) {
             $redcap->{$patient_id}{$event}{$instance}{albumin_value} = 'ND';
             $redcap->{$patient_id}{$event}{$instance}{labs_complete} = '2';
         }
@@ -610,7 +614,7 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Bloodlabs\n";
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for a patient  in Package Bloodlabs\n";
     }
     return $good_date;
 } # close sub iso_date

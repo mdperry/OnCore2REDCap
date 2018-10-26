@@ -6,7 +6,7 @@
 # 
 # 
 # 
-# Last Updated: 2018-10-13, Status: in development
+# Last Updated: 2018-10-23, Status: in development
 
 use strict;
 use warnings;
@@ -24,6 +24,7 @@ use Preenrollment;
 use Bloodlabs;
 use Postbiopsy qw(add_progression_dates extract_postbx_tx);
 use Assessment;
+use Additional;
 use List::MoreUtils qw(uniq);
 use Date::Calc qw ( Delta_Days );
 
@@ -157,7 +158,12 @@ my %types_of_tables = ( 'Prostate Diagnosis' => 'dx',
 
 my @gu = qw( assess_date assess_exam___1 assess_exam___2 assess_exam___3 assess_exam___4 assess_exam___5 assess_exam___6 other_exam assess_sites___1 assess_sites___2 assess_sites___3 assess_sites___4 assess_sites___5 assess_sites___6 other_sites_mets pre_tx_resp_bone_2 pre_tx_resp_recist_2 radiographic_disease_assessment_complete );	
 
-my %ass =();
+my %ass = ();
+
+# this is a global variable that I am going to use to track whether or not
+# I have already updated the dates in Rahul's additional data table
+my %updated = ();
+my %seen = ();
 
 my %red_drug_names = (
     "Abiraterone Acetate" => "abiraterone",
@@ -256,10 +262,10 @@ my %red_drug_names = (
 # This is the hash that will hold the data structure we eventually print out
 my %redcap = ();
 
-# 2017-10-02 I updated both of these arrays so that the field names would precisely match the latest version in REDCap
-my @fields = qw( patient_id redcap_event_name redcap_repeat_instrument redcap_repeat_instance track_alive last_known_alive track_death pt_off_study off_study_date track_reason reason_off_study patient_disposition_complete first_name last_name mrn birth_date on_study_date study___1 study___2 study___3 next aggressive_phenotype criteria_aggressive___1 criteria_aggressive___2 criteria_aggressive___3 criteria_aggressive___4 institution opt_blood_draw provider_choice_therapy___1 provider_choice_therapy___2 provider_choice_therapy___3 provider_choice_therapy___4 provider_choice_therapy___5 provider_choice_therapy___6 provider_choice_therapy___7 planned_subseq_tx other_planned_sub_tx race ethnicity patient_enrollment_demographics_complete dx_state dx_primary dx_secondary dx_psa dx_date dx_mets_date dx_crpc_date date_of_mcrpc prostate_cancer_initial_diagnosis_complete prior_rp prior_rp_date prior_rad prior_rad_start prior_rad_stop primary_therapy_complete date_ecog ecog_value ecog_wt height physical_exam_complete pre_drug_name combo_drug pre_drug_name_2 drug_name_available___1 drug_name_specific pre_tx_cat___1 pre_tx_cat___2 pre_tx_cat___3 pre_tx_cat___4 pre_tx_cat___5 pre_tx_cat___6 adt_start adt_ongoing adt_stop nadir_psa_adt pre_tx_start pre_tx_ongoing pre_tx_stop pre_tx_reason other_stop_tx bl_psa_yn pre_tx_psa_bl baseline_psa_date nadir_psa_yn pre_tx_psa_nadir psa_response pre_tx_psa_resp pre_tx_resp_bone pre_tx_resp_recist pre_tx_pro_type___1 pre_tx_pro_type___3 pre_tx_pro_type___4 pre_tx_pro_type___5 pre_tx_pro_type___6 pre_tx_pro_type___7 other_prog_disease pre_tx_pro_date preenrollment_therapy_complete psa_date psa_value psa_lab_test_complete lab_date albumin_value alp_value ldh_value tst_value hgb_value plt_value wbc_value wbc_n_value labs_complete pre_drug_name_v2 combo_drug_v2 pre_drug_name_2_v2 drug_name_available_2___1 drug_name_specific_2 pre_tx_cat_v2___1 pre_tx_cat_v2___2 pre_tx_cat_v2___3 pre_tx_cat_v2___4 pre_tx_cat_v2___5 pre_tx_cat_v2___6 adt_start_v2 adt_ongoing_v2 adt_stop_v2 post_nadir_psa_adt pre_tx_start_v2 pre_tx_ongoing_v2 pre_tx_stop_v2 pre_tx_reason_v2 other_stop_tx_v2 bl_psa_yn_v2 pre_tx_psa_bl_v2 baseline_psa_date_v2 nadir_psa_yn_v2 pre_tx_psa_nadir_v2 psa_response_v2 pre_tx_psa_resp_v2 pre_tx_resp_bone_v2 pre_tx_resp_recist_v2 pre_tx_pro_type_v2___1 pre_tx_pro_type_v2___3 pre_tx_pro_type_v2___4 pre_tx_pro_type_v2___5 pre_tx_pro_type_v2___6 pre_tx_pro_type_v2___7 other_prog_disease_v2 pre_tx_pro_date_v2 postbiopsy_therapy_complete assess_date assess_exam___1 assess_exam___2 assess_exam___3 assess_exam___4 assess_exam___5 assess_exam___6 other_exam assess_sites___1 assess_sites___2 assess_sites___3 assess_sites___4 assess_sites___5 assess_sites___6 other_sites_mets pre_tx_resp_bone_2 pre_tx_resp_recist_2 radiographic_disease_assessment_complete bx_timepoint organ_site same_lesion specimen_id bx_date steroids specify_steroids opioids specify_opioids site_biopsy bone_bx_location other_site_bx clia other_clia germline_mutations mutations biopsy_collection_complete archival_tissue_yn dos sample_type other_sample_type facility accession_number archival_tissue_complete date_blood_draw serum_value serum_neuroendocrine_markers_complete );
+# 2018-10-23 I updated both of these arrays so that the field names would precisely match the latest version in REDCap
+my @fields = qw( patient_id redcap_event_name redcap_repeat_instrument redcap_repeat_instance track_alive last_known_alive track_death pt_off_study off_study_date track_reason reason_off_study patient_disposition_complete first_name last_name mrn birth_date on_study_date study___1 study___3 next aggressive_phenotype criteria_aggressive___1 criteria_aggressive___2 criteria_aggressive___3 criteria_aggressive___4 institution opt_blood_draw provider_choice_therapy___1 provider_choice_therapy___2 provider_choice_therapy___3 provider_choice_therapy___4 provider_choice_therapy___5 provider_choice_therapy___6 provider_choice_therapy___7 planned_subseq_tx other_planned_sub_tx race ethnicity patient_enrollment_demographics_complete dx_state dx_primary dx_secondary dx_psa dx_date dx_mets_date dx_crpc_date date_of_mcrpc prostate_cancer_initial_diagnosis_complete prior_rp prior_rp_date prior_rad prior_rad_start prior_rad_stop primary_therapy_complete date_ecog ecog_value ecog_wt height physical_exam_complete pre_drug_name combo_drug pre_drug_name_2 drug_name_available___1 drug_name_specific pre_tx_cat___1 pre_tx_cat___2 pre_tx_cat___3 pre_tx_cat___4 pre_tx_cat___5 pre_tx_cat___6 adt_start adt_ongoing adt_stop nadir_psa_adt pre_tx_start pre_tx_ongoing pre_tx_stop pre_tx_reason other_stop_tx bl_psa_yn pre_tx_psa_bl baseline_psa_date nadir_psa_yn pre_tx_psa_nadir psa_response pre_tx_psa_resp pre_tx_resp_bone pre_tx_resp_recist pre_tx_pro_type___1 pre_tx_pro_type___3 pre_tx_pro_type___4 pre_tx_pro_type___5 pre_tx_pro_type___6 pre_tx_pro_type___7 other_prog_disease pre_tx_pro_date preenrollment_therapy_complete psa_date psa_value psa_lab_test_complete lab_date albumin_value alp_value ldh_value tst_value hgb_value plt_value wbc_value wbc_n_value labs_complete pre_drug_name_v2 combo_drug_v2 pre_drug_name_2_v2 drug_name_available_2___1 drug_name_specific_2 pre_tx_cat_v2___1 pre_tx_cat_v2___2 pre_tx_cat_v2___3 pre_tx_cat_v2___4 pre_tx_cat_v2___5 pre_tx_cat_v2___6 adt_start_v2 adt_ongoing_v2 adt_stop_v2 post_nadir_psa_adt pre_tx_start_v2 pre_tx_ongoing_v2 pre_tx_stop_v2 pre_tx_reason_v2 other_stop_tx_v2 bl_psa_yn_v2 pre_tx_psa_bl_v2 baseline_psa_date_v2 nadir_psa_yn_v2 pre_tx_psa_nadir_v2 psa_response_v2 pre_tx_psa_resp_v2 pre_tx_resp_bone_v2 pre_tx_resp_recist_v2 pre_tx_pro_type_v2___1 pre_tx_pro_type_v2___3 pre_tx_pro_type_v2___4 pre_tx_pro_type_v2___5 pre_tx_pro_type_v2___6 pre_tx_pro_type_v2___7 other_prog_disease_v2 pre_tx_pro_date_v2 postbiopsy_therapy_complete assess_date assess_exam___1 assess_exam___2 assess_exam___3 assess_exam___4 assess_exam___5 assess_exam___6 other_exam assess_sites___1 assess_sites___2 assess_sites___3 assess_sites___4 assess_sites___5 assess_sites___6 other_sites_mets pre_tx_resp_bone_2 pre_tx_resp_recist_2 radiographic_disease_assessment_complete bx_timepoint organ_site same_lesion specimen_id bx_date steroids specify_steroids opioids specify_opioids site_biopsy bone_bx_location other_site_bx clia other_clia germline_mutations mutations biopsy_collection_complete archival_tissue_yn dos sample_type other_sample_type facility accession_number archival_tissue_complete date_blood_draw serum_value enolase_value serum_neuroendocrine_markers_complete );
 
-my @fields_to_print = qw( track_alive last_known_alive track_death pt_off_study off_study_date track_reason reason_off_study patient_disposition_complete first_name last_name mrn birth_date on_study_date study___1 study___2 study___3 next aggressive_phenotype criteria_aggressive___1 criteria_aggressive___2 criteria_aggressive___3 criteria_aggressive___4 institution opt_blood_draw provider_choice_therapy___1 provider_choice_therapy___2 provider_choice_therapy___3 provider_choice_therapy___4 provider_choice_therapy___5 provider_choice_therapy___6 provider_choice_therapy___7 planned_subseq_tx other_planned_sub_tx race ethnicity patient_enrollment_demographics_complete dx_state dx_primary dx_secondary dx_psa dx_date dx_mets_date dx_crpc_date date_of_mcrpc prostate_cancer_initial_diagnosis_complete prior_rp prior_rp_date prior_rad prior_rad_start prior_rad_stop primary_therapy_complete date_ecog ecog_value ecog_wt height physical_exam_complete pre_drug_name combo_drug pre_drug_name_2 drug_name_available___1 drug_name_specific pre_tx_cat___1 pre_tx_cat___2 pre_tx_cat___3 pre_tx_cat___4 pre_tx_cat___5 pre_tx_cat___6 adt_start adt_ongoing adt_stop nadir_psa_adt pre_tx_start pre_tx_ongoing pre_tx_stop pre_tx_reason other_stop_tx bl_psa_yn pre_tx_psa_bl baseline_psa_date nadir_psa_yn pre_tx_psa_nadir psa_response pre_tx_psa_resp pre_tx_resp_bone pre_tx_resp_recist pre_tx_pro_type___1 pre_tx_pro_type___3 pre_tx_pro_type___4 pre_tx_pro_type___5 pre_tx_pro_type___6 pre_tx_pro_type___7 other_prog_disease pre_tx_pro_date preenrollment_therapy_complete psa_date psa_value psa_lab_test_complete lab_date albumin_value alp_value ldh_value tst_value hgb_value plt_value wbc_value wbc_n_value labs_complete pre_drug_name_v2 combo_drug_v2 pre_drug_name_2_v2 drug_name_available_2___1 drug_name_specific_2 pre_tx_cat_v2___1 pre_tx_cat_v2___2 pre_tx_cat_v2___3 pre_tx_cat_v2___4 pre_tx_cat_v2___5 pre_tx_cat_v2___6 adt_start_v2 adt_ongoing_v2 adt_stop_v2 post_nadir_psa_adt pre_tx_start_v2 pre_tx_ongoing_v2 pre_tx_stop_v2 pre_tx_reason_v2 other_stop_tx_v2 bl_psa_yn_v2 pre_tx_psa_bl_v2 baseline_psa_date_v2 nadir_psa_yn_v2 pre_tx_psa_nadir_v2 psa_response_v2 pre_tx_psa_resp_v2 pre_tx_resp_bone_v2 pre_tx_resp_recist_v2 pre_tx_pro_type_v2___1 pre_tx_pro_type_v2___3 pre_tx_pro_type_v2___4 pre_tx_pro_type_v2___5 pre_tx_pro_type_v2___6 pre_tx_pro_type_v2___7 other_prog_disease_v2 pre_tx_pro_date_v2 postbiopsy_therapy_complete assess_date assess_exam___1 assess_exam___2 assess_exam___3 assess_exam___4 assess_exam___5 assess_exam___6 other_exam assess_sites___1 assess_sites___2 assess_sites___3 assess_sites___4 assess_sites___5 assess_sites___6 other_sites_mets pre_tx_resp_bone_2 pre_tx_resp_recist_2 radiographic_disease_assessment_complete bx_timepoint organ_site same_lesion specimen_id bx_date steroids specify_steroids opioids specify_opioids site_biopsy bone_bx_location other_site_bx clia other_clia germline_mutations mutations biopsy_collection_complete archival_tissue_yn dos sample_type other_sample_type facility accession_number archival_tissue_complete date_blood_draw serum_value serum_neuroendocrine_markers_complete );
+my @fields_to_print = qw( track_alive last_known_alive track_death pt_off_study off_study_date track_reason reason_off_study patient_disposition_complete first_name last_name mrn birth_date on_study_date study___1 study___3 next aggressive_phenotype criteria_aggressive___1 criteria_aggressive___2 criteria_aggressive___3 criteria_aggressive___4 institution opt_blood_draw provider_choice_therapy___1 provider_choice_therapy___2 provider_choice_therapy___3 provider_choice_therapy___4 provider_choice_therapy___5 provider_choice_therapy___6 provider_choice_therapy___7 planned_subseq_tx other_planned_sub_tx race ethnicity patient_enrollment_demographics_complete dx_state dx_primary dx_secondary dx_psa dx_date dx_mets_date dx_crpc_date date_of_mcrpc prostate_cancer_initial_diagnosis_complete prior_rp prior_rp_date prior_rad prior_rad_start prior_rad_stop primary_therapy_complete date_ecog ecog_value ecog_wt height physical_exam_complete pre_drug_name combo_drug pre_drug_name_2 drug_name_available___1 drug_name_specific pre_tx_cat___1 pre_tx_cat___2 pre_tx_cat___3 pre_tx_cat___4 pre_tx_cat___5 pre_tx_cat___6 adt_start adt_ongoing adt_stop nadir_psa_adt pre_tx_start pre_tx_ongoing pre_tx_stop pre_tx_reason other_stop_tx bl_psa_yn pre_tx_psa_bl baseline_psa_date nadir_psa_yn pre_tx_psa_nadir psa_response pre_tx_psa_resp pre_tx_resp_bone pre_tx_resp_recist pre_tx_pro_type___1 pre_tx_pro_type___3 pre_tx_pro_type___4 pre_tx_pro_type___5 pre_tx_pro_type___6 pre_tx_pro_type___7 other_prog_disease pre_tx_pro_date preenrollment_therapy_complete psa_date psa_value psa_lab_test_complete lab_date albumin_value alp_value ldh_value tst_value hgb_value plt_value wbc_value wbc_n_value labs_complete pre_drug_name_v2 combo_drug_v2 pre_drug_name_2_v2 drug_name_available_2___1 drug_name_specific_2 pre_tx_cat_v2___1 pre_tx_cat_v2___2 pre_tx_cat_v2___3 pre_tx_cat_v2___4 pre_tx_cat_v2___5 pre_tx_cat_v2___6 adt_start_v2 adt_ongoing_v2 adt_stop_v2 post_nadir_psa_adt pre_tx_start_v2 pre_tx_ongoing_v2 pre_tx_stop_v2 pre_tx_reason_v2 other_stop_tx_v2 bl_psa_yn_v2 pre_tx_psa_bl_v2 baseline_psa_date_v2 nadir_psa_yn_v2 pre_tx_psa_nadir_v2 psa_response_v2 pre_tx_psa_resp_v2 pre_tx_resp_bone_v2 pre_tx_resp_recist_v2 pre_tx_pro_type_v2___1 pre_tx_pro_type_v2___3 pre_tx_pro_type_v2___4 pre_tx_pro_type_v2___5 pre_tx_pro_type_v2___6 pre_tx_pro_type_v2___7 other_prog_disease_v2 pre_tx_pro_date_v2 postbiopsy_therapy_complete assess_date assess_exam___1 assess_exam___2 assess_exam___3 assess_exam___4 assess_exam___5 assess_exam___6 other_exam assess_sites___1 assess_sites___2 assess_sites___3 assess_sites___4 assess_sites___5 assess_sites___6 other_sites_mets pre_tx_resp_bone_2 pre_tx_resp_recist_2 radiographic_disease_assessment_complete bx_timepoint organ_site same_lesion specimen_id bx_date steroids specify_steroids opioids specify_opioids site_biopsy bone_bx_location other_site_bx clia other_clia germline_mutations mutations biopsy_collection_complete archival_tissue_yn dos sample_type other_sample_type facility accession_number archival_tissue_complete date_blood_draw serum_value enolase_value serum_neuroendocrine_markers_complete );
 
 
 my @metadata; # an array to hold all the hashes from each line
@@ -410,7 +416,8 @@ foreach my $id ( keys( %timespans ) ) {
                 my $date = $event;
                 my ( $year2, $month2, $day2 ) = split /-/, $date;
 		my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
-                if ( $days > 31 ) {
+                # if ( $days > 31 ) {
+                if ( $days > 37 ) {		    
                     # if any of the other ordered events are more than 31 days after progression_1
 		    # then by definition the first one must be progression_2
 		    $timespans{$id}{progression_2} = $date;
@@ -430,7 +437,8 @@ foreach my $id ( keys( %timespans ) ) {
                     my $date = $event;
                     my ( $year2, $month2, $day2 ) = split /-/, $date;
 		    my $days = Delta_Days( $year1, $month1, $day1, $year2, $month2, $day2);
-		    if ( $days > 31 ) {
+		    # if ( $days > 31 ) {
+		    if ( $days > 37 ) {
                         $timespans{$id}{progression_3} = $date;
 			$timespans{$id}{max} = 'progression_3';
 			last;
@@ -474,6 +482,8 @@ foreach my $id ( keys( %timespans ) ) {
         $timespans{$id}{progression_1} = $timespans{$id}{txprogdates}[0];
     }
 } # close foreach my $id
+
+# this next block exists solely to print out a table showing the contents of the %timespans hash:
 
 =pod
 
@@ -533,10 +543,11 @@ foreach my $id ( keys( %ecog_dates ) ) {
     } # close foreach my $segment loop
 } # close foreach my $ id loop
 
-    
+
 # print "\n", Data::Dumper->new([\%timespans],[qw(timespans)])->Indent(1)->Quotekeys(0)->Dump, "\n";
 # print "\n", Data::Dumper->new([\%ecog_dates],[qw(ecog_dates)])->Indent(1)->Quotekeys(0)->Dump, "\n";
-    
+# exit;    
+
 # STEP 2. Process each row, one at a time
 foreach my $row ( @metadata ) {
     my %hash = %{$row};
@@ -732,7 +743,12 @@ of feature requests to request.
 	# The call to the extract_additional sub-routine in the Additional.pm module
 	# is passed the $patient_id for this record, and then references to the %hash for this
 	# record, the global %redcap hash
-#        extract_additional ( $patient_id, \%hash, \%redcap, );
+
+	# There were a couple of rows in Rahul's table where the patient was not in the OnCore
+	# Data dump, so the first test is to make sure the current record is for a bona fide
+	# OnCore patient id.
+        next unless ( exists $redcap{$patient_id} );
+        extract_additional ( $patient_id, \%hash, \%redcap, \%timespans, \%updated, \%seen, );
     } # close if ( $current_table eq 'wcdt_add' )
 } # close foreach my $row ( @metadata )
 
@@ -773,6 +789,8 @@ foreach my $id ( sort keys %ass ) {
 
 # print_jsonl( \@metadata );
 # print_jsonl( \%redcap );
+print "\n", Data::Dumper->new([\%redcap],[qw(redcap)])->Indent(1)->Quotekeys(0)->Dump, "\n";    
+exit;
 print_redcap();
 exit;
 
@@ -863,7 +881,15 @@ This now actually the former version of this redcap event array, I swapped in th
 sub print_redcap {
     # print the header for the TSV file you want to eventually import into REDCap
     print join( "\t", @fields ), "\n";
-    my @events = qw( patient_dispositio_arm_2-patient_disposition pre_study_screen_arm_2-BLANK pre_study_screen_arm_2-patient_enrollment_demographics pre_study_screen_arm_2-prostate_cancer_initial_diagnosis pre_study_screen_arm_2-primary_therapy pre_study_screen_arm_2-physical_exam pre_study_screen_arm_2-preenrollment_therapy pre_study_screen_arm_2-psa_lab_test pre_study_screen_arm_2-labs pre_study_screen_arm_2-radiographic_disease_assessment pre_study_screen_arm_2-archival_tissue pre_study_screen_arm_2-serum_neuroendocrine_markers biopsy_arm_2-biopsy_collection initiation_of_post_arm_2-postbiopsy_therapy every_3_months_arm_2-psa_lab_test every_3_months_arm_2-radiographic_disease_assessment every_3_months_arm_2-serum_neuroendocrine_markers progression_arm_2-BLANK progression_arm_2-physical_exam progression_arm_2-psa_lab_test progression_arm_2-labs progression_arm_2-radiographic_disease_assessment biopsy_2_arm_2-biopsy_collection biopsy_2_arm_2-serum_neuroendocrine_markers initiation_of_post_arm_2b-postbiopsy_therapy every_3_months_pos_arm_2-psa_lab_test every_3_months_pos_arm_2-radiographic_disease_assessment followup_postbx_2_arm_2-radiographic_disease_assessment progression_2_arm_2-physical_exam progression_2_arm_2-psa_lab_test progression_2_arm_2-labs progression_2_arm_2-radiographic_disease_assessment biopsy_3_arm_2-biopsy_collection biopsy_3_arm_2-serum_neuroendocrine_markers initiation_of_post_arm_2c-postbiopsy_therapy every_3_months_pos_arm_2b-psa_lab_test every_3_months_pos_arm_2b-radiographic_disease_assessment followup_postbx_3_arm_2-radiographic_disease_assessment progression_3_arm_2-physical_exam progression_3_arm_2-psa_lab_test progression_3_arm_2-labs progression_3_arm_2-radiographic_disease_assessment progression_3_arm_2-serum_neuroendocrine_markers );    
+    # # # #
+    # N.B. _EVERY_ Time you change this REDCap Projects "Instruments and Events" Grid, to generate a new combination of an Event
+    # and and Instrument, then you absolutely need to update the contents of this array accordingly.  Otherwise, the new
+    # Information may be captured in your data structure, but they will never get printed out. Which is rather mysterious.
+    # WHOOPS! I almost missed this factoid.  In addition to all of these official event-instrument pairings you also absolutely
+    # need to insert these two extra items on the list: pre_study_screen_arm_2-BLANK AND, progression_arm_2-BLANK
+    # # # #
+    
+    my @events = qw( patient_dispositio_arm_2-patient_disposition pre_study_screen_arm_2-BLANK pre_study_screen_arm_2-patient_enrollment_demographics pre_study_screen_arm_2-prostate_cancer_initial_diagnosis pre_study_screen_arm_2-primary_therapy pre_study_screen_arm_2-physical_exam pre_study_screen_arm_2-preenrollment_therapy pre_study_screen_arm_2-psa_lab_test pre_study_screen_arm_2-labs pre_study_screen_arm_2-radiographic_disease_assessment pre_study_screen_arm_2-archival_tissue pre_study_screen_arm_2-serum_neuroendocrine_markers biopsy_arm_2-biopsy_collection biopsy_arm_2-serum_neuroendocrine_markers initiation_of_post_arm_2-postbiopsy_therapy every_3_months_arm_2-psa_lab_test every_3_months_arm_2-radiographic_disease_assessment every_3_months_arm_2-serum_neuroendocrine_markers progression_arm_2-BLANK progression_arm_2-physical_exam progression_arm_2-psa_lab_test progression_arm_2-labs progression_arm_2-radiographic_disease_assessment biopsy_2_arm_2-biopsy_collection biopsy_2_arm_2-serum_neuroendocrine_markers initiation_of_post_arm_2b-postbiopsy_therapy every_3_months_pos_arm_2-psa_lab_test every_3_months_pos_arm_2-radiographic_disease_assessment followup_postbx_2_arm_2-radiographic_disease_assessment progression_2_arm_2-physical_exam progression_2_arm_2-psa_lab_test progression_2_arm_2-labs progression_2_arm_2-radiographic_disease_assessment biopsy_3_arm_2-biopsy_collection biopsy_3_arm_2-serum_neuroendocrine_markers initiation_of_post_arm_2c-postbiopsy_therapy every_3_months_pos_arm_2b-psa_lab_test every_3_months_pos_arm_2b-radiographic_disease_assessment followup_postbx_3_arm_2-radiographic_disease_assessment progression_3_arm_2-physical_exam progression_3_arm_2-psa_lab_test progression_3_arm_2-labs progression_3_arm_2-radiographic_disease_assessment progression_3_arm_2-serum_neuroendocrine_markers );
     
     # The keys in this global hash are the patient_ids
     foreach my $id ( sort keys %redcap ) {

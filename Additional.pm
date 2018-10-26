@@ -1,23 +1,61 @@
 package Additional;
 
+use strict;
+use warnings;
 use base 'Exporter';
 our @EXPORT_OK = 'extract_additional';
 our @EXPORT    = 'extract_additional';
-    
+use Date::Calc qw ( Delta_Days );    
 
 sub extract_additional {
     my $patient_id = shift @_;
     my %hash = %{shift @_};
     my $redcap = shift @_;
-
+    my $timespans = shift @_;
+    my $updated = shift @_;
+    my $seen = shift @_;
+    
     my $addnl_dx_mets_date = q{};
     my $addnl_dx_crpc_date = q{};
     my $addnl_date_of_mcrpc = q{};
+    my $current_path_call = q{};
     my $final_path_call = q{};
+    # neuroendocrine_marker = CHROMOGRANIN
     my $serum_chga = q{};
+    # neuroendocrine_marker = ENOLASE
     my $serum_nse = q{};
-    my $addnl_site = q{};
-
+    my $addnl_sites = q{};
+    my $timepoint = q{};
+    my $instance = q{};
+    my $serum_instance = q{};
+    my $event = q{};
+    my $serum_event = q{};
+    
+    # This hash is supposed to convert the variety of different FINAL_PATH_CALLS in Rahul's additional table
+    # into one of the seven (nope, make that eight) acceptable CLIA calls that REDCap allows
+    # 1, Adenocarcinoma | 2, IAC | 3, Small cell | 4, IAC-small cell | 5, IAC-adeno | 7, Insufficient tumor | 6, Other 8, Adeno-small cell
+    my %path_calls = ( 'Adenocarcinoma' => '1',
+                       'IAC' => '2',
+                       'Adeno/IAC' => '5',
+                       'IAC/adeno' => '5',
+                       'IAC/Adeno' => '5',
+                       'IAC/Small cell' => '4',
+                       'No biopsy performed' => '7',
+                       'Missing' => '7',
+                       'Unavailable' => '7',
+                       'Adeno/small cell' => '8',
+                       'Adenocarcinoma with Paneth' => '6',
+                       'Colorectal Adenocarcinoma' => '6',
+                       'Small cell/adeno' => '8',
+                       'qNS' => '6',
+                       'Non-prostate pathology' => '6',
+                       'Indeterminate' => '6',
+                       'Adeno/Small cell' => '8',
+                       'Cytology mixed' => '6',
+                       'QNS' => '6',
+                       'Small cell' => '3',
+                       'Small Cell' => '3',
+                     );
 
 =pod
 
@@ -38,7 +76,7 @@ my $serum_nse = q{};
 2018-09-21 Rahul answered my most recent Email and explained that the dates in his spreadsheet should take precedence
 Over the Data in OnCore (and four the four instances where I had a query, he said that he would get to those later). 
 I am correct that the Progression and the Baseline samples should INDEED have the same three dates for both timepoint samples
-So that means that don't really need to process any of the Progression Dates at this point in time, right?
+So that means that I don't really need to process any of the Progression Dates at this point in time, right?
 
 So, working on the logic loop here, the first section of this module simply creates some new variables
 And then fills these variables in with the corresponding incoming data (if that field has any data).
@@ -53,16 +91,29 @@ serum_neuroendocrine_markers_complete
 
 So I bopped over to REDCap and logged in to see the current DEMO that I created back in . . . August, 2018 (I think),
 does that sound about right?
+
+pre_study_screen_arm_2-serum_neuroendocrine_markers
+every_3_months_arm_2-serum_neuroendocrine_markers
+biopsy_2_arm_2-serum_neuroendocrine_markers
+biopsy_3_arm_2-serum_neuroendocrine_markers
+progression_3_arm_2-serum_neuroendocrine_markers
+
 Very interesting.  I can collect serum_neurendocrine values at all of these following times:
-During the Pre-Study, or Screening phase
-As part of the Every 3 months phase
-As part of the Biopsy 2 phase (but not at the Biopsy 1 phase or the Progression 1 phase)
+1. During the Pre-Study, or Screening phase
+
+2. As part of the Every 3 months phase
+
+3. As part of the Biopsy 2 phase (but not at the Biopsy 1 phase or the Progression 1 phase)
+
 NOT as part of Every 3 months at the Post-bx 2 phase (see how that does not make sense to me? Why collect
 it in the Every 3 months phase, earlier, after the Biopsy 1 phase, but not after biopsy 2? (Biopsy 2
 only occurs after a patient has undergone progression, right?).
-As part of the Biopsy 3 phase
+
+4. As part of the Biopsy 3 phase
+
 NOT as part of Every 3 months at the Post-bx 3 phase
-As part of the Progression 3 phase
+
+5. As part of the Progression 3 phase
 
 Okay, after looking at this, I need to print out a picture of this grid, I know
 that I have done this before, but I want to make sure that I understand
@@ -76,8 +127,9 @@ How does my script handle those, as well? I am going to check on that.
 
 
 =cut
-
     
+    $timepoint = $hash{'TIMEPOINT'};
+
     
     if ( $hash{'DateOfCR'} ) {
         $addnl_dx_crpc_date = $hash{'DateOfCR'};
@@ -107,106 +159,133 @@ How does my script handle those, as well? I am going to check on that.
         $serum_nse = $hash{'BIOPSY_SERUM_NSE'};
     }
 
+    # STEP 2. Start filling in the values just extracted, into the %redcap hash
+    # Check to see if the three dates in Rahul's table have already been processed
+    # Q1: Have we processed any rows from this patient previously? (because for almost
+    # every patient the information in these three fields is identical and we can just extract
+    # it once from the Baseline sample
+    unless ( exists $updated->{$patient_id} ) {
+        # This must be the first record we have encountered for this patient
+	# So add a key to the hashref
+        $updated->{$patient_id} = undef;
+    }
+
+    # Skip this block if we have already processed a row for this patient id
+    unless ( defined $updated->{$patient_id} ) {
+        # Otherwise, modify the flag
+        $updated->{$patient_id} = '1';
+	# And test to see if we were able to extract a date from Rahul's table
+	# If so, then update the record in the %redcap hash
+        if ( $addnl_dx_mets_date ) {
+            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_mets_date} = $addnl_dx_mets_date;
+	}
+
+	if ( $addnl_dx_crpc_date ) {
+            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_crpc_date} = $addnl_dx_crpc_date;
+	}
+
+	if ( $addnl_date_of_mcrpc ) {
+            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{date_of_mcrpc} = $addnl_date_of_mcrpc;
+	}
+    }
+    # This testing was because there is one patient without a Baseline sample, just a Progression sample
+
+    $instance = '1';
+    $serum_instance ='1';
+    
+    if ( $timepoint eq 'Baseline' ) {
+        $event = 'biopsy_arm_2-biopsy_collection';
+	$serum_event = 'biopsy_arm_2-serum_neuroendocrine_markers';
+    }
+    elsif ( $timepoint eq 'Progression' ) {
+        $event = 'biopsy_2_arm_2-biopsy_collection';
+        $serum_event = 'biopsy_2_arm_2-serum_neuroendocrine_markers';
+    }
+    elsif ( $timepoint eq 'Progression2' ) {
+        $event = 'biopsy_3_arm_2-biopsy_collection';
+        $serum_event = 'biopsy_3_arm_2-serum_neuroendocrine_markers';
+    }
+    elsif ( $timepoint eq 'Progression3' ) {
+        $event = 'biopsy_3_arm_2-biopsy_collection';
+        $serum_event = 'progression_3_arm_2-serum_neuroendocrine_markers';	
+    }
+
+
+    if ( exists $seen->{$patient_id}{$event}{$instance} ) {
+        # if you pass this test then that means we have already processed a record for this
+	# patient with the same event and instance, and we need to autoincrement the
+	# instance so that we don't clobber and overwrite the previously captured value
+	# These are admittedly relatively rare edge-cases
+        $instance++;
+    }
+    else {
+        # if you reach here then that means we did not process a record like this event
+	# for this patient earlier, so set the flag
+	$seen->{$patient_id}{$event}{$instance} = '1';
+    }
+
+    # Same thing for the serum_events because those are intimately linked to their
+    # respective biopsy dates
+    if ( exists $seen->{$patient_id}{$serum_event}{$serum_instance} ) {
+        $serum_instance++;
+    }
+    else {
+        $seen->{$patient_id}{$serum_event}{$serum_instance} = '1';
+    }
+
+    
+    if ( $final_path_call ) {
+        $current_path_call = $path_calls{$final_path_call};
+    }
+    else {
+        $current_path_call = '7';
+    }
+    $redcap->{$patient_id}{$event}{$instance}{'clia'} = $current_path_call;
+    
+    if ( $current_path_call eq '6' ) {
+        $redcap->{$patient_id}{$event}{$instance}{'other_clia'} = $final_path_call;
+    }
+
+
+    if ( $serum_chga ) {
+        $redcap->{$patient_id}{$serum_event}{$serum_instance}{'serum_value'} = $serum_chga;
+    }
+
+    if ( $serum_nse ) {
+        $redcap->{$patient_id}{$serum_event}{$serum_instance}{'enolase_value'} = $serum_nse;
+    }
+
+    if ( $serum_chga | $serum_nse ) {
+	# This should work. Note that I am using the $event, not the $serum_event
+	# to see if this timpoint biopsy has biopsy date.  If it does, Rahul said that is
+	# what I should enter into the instrument
+	if ( $redcap->{$patient_id}{$event}{$instance}{'bx_date'} ) {
+           $redcap->{$patient_id}{$serum_event}{$serum_instance}{'date_blood_draw'} = $redcap->{$patient_id}{$event}{$instance}{'bx_date'}; 
+	}
+        $redcap->{$patient_id}{$serum_event}{$serum_instance}{'serum_neuroendocrine_markers_complete'} = '2';
+    }
+} # close sub
+
 
 =pod
-    
-    | SEQUENCE_NO_ | FORM_DESC_      | ALIQUOT_ID | SAMPLE_ID   | CASE_ID | SAMPLE_TYPE           | LEGACY_TYPE | PROGRESSION_NUMBER | BIOPSY_SITE | TIMEPOINT   | FINAL_PATH_CALL | SITES_OF_METS_AT_TIME_OF_BIOPSY | BIOPSY_SERUM_CHGA | BIOPSY_SERUM_NSE |   DateOfCR | DateOfFirstMetastases | DateofmCRPC |
-|--------------+-----------------+------------+-------------+---------+-----------------------+-------------+--------------------+-------------+-------------+-----------------+---------------------------------+-------------------+------------------+------------+-----------------------+-------------|
-|          021 | WCDT_Additional | DTB-021    | DTB-021-BL  | DTB-021 | Metastatic            | Baseline    |                  0 | Bone        | Baseline    | Small Cell      | Bone                            | 8                 |             10.6 | 2013-03-28 |            2013-05-31 |  2013-05-31 |
-|          021 | WCDT_Additional | DTB-021Pro | DTB-021-Pro | DTB-021 | Additional Metastatic | Progression |                  1 | Bone        | Progression | Adenocarcinoma  | Bone                            | < 5               |             24.2 | 2013-03-28 |            2013-05-31 |  2013-05-31 |
 
 dx_mets_date
 dx_crpc_date
 date_of_mcrpc
 
-
+Here are the 7 additional data points that Rahul's table contained:
+Original Field	My Modified Field	Insertion point in REDCap
+Final Path Call	FINAL_PATH_CALL	???
+Sites of Metastases at time of biopsy	SITES_OF_METS_AT_TIME_OF_BIOPSY	???
+Serum CHGA at biopsy	BIOPSY_SERUM_CHGA	NONE
+Serum NSE at Biopsy	BIOPSY_SERUM_NSE	
+Date of Castration Resistance	DateOfCR	
+First Date of Metastases	DateOfFirstMetastases	
+Date of mCRPC	DateofmCRPC	
 
 
 =cut
-    
 
-
-    my %disease_at_dx = ( "Localized" => "1",
-                          "Metastatic" => "2",
-                          "Unknown" => "3",
-                        );
- 
-    if ( $hash{DISEASE_STATE_AT_DIAGNOSIS} ) {
-        $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_state} = $disease_at_dx{$hash{DISEASE_STATE_AT_DIAGNOSIS}};
-    }
-    else {
-        $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_state} = '3';
-    } # close if/else test
-    
-    if ( $hash{PRIMARY_GLEASON_SCORE} ) {
-        # 2018-07-16 Sometime between last December, and last Week, REDCap seems to have been updated
-	# Such that it now throws an exception if you try it import a record where the values in one field fall
-	# outside the range of accepted values (in this case it is a couple of radiobox selections)
-	# Three patients in the OnCore diagnosis table have a Gleason of 9, which is probably a total
-	# but which the form does not allow.  The only acceptable values for these next two fields are:
-	# 2, 3, 4, or 5.  So my short-term solution is to throw away the value, but I will flag it for
-	# the CRA's
-        if ( $hash{PRIMARY_GLEASON_SCORE} > 1 and $hash{PRIMARY_GLEASON_SCORE} < 6 ) {
-	    $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_primary} = $hash{PRIMARY_GLEASON_SCORE};
-	}
-    }
-
-    if ( $hash{SECONDARY_GLEASON_SCORE} ) {
-        if ( $hash{SECONDARY_GLEASON_SCORE} > 1 and $hash{SECONDARY_GLEASON_SCORE} < 6 ) {
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_secondary} = $hash{SECONDARY_GLEASON_SCORE};
-        }
-    }
-        if ( $hash{PSA_VALUE} ) {
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_psa} = $hash{PSA_VALUE};
-        }
-        else {
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_psa} = 'UNK';
-        } # close if/else test
-
-        if ( $hash{VISIT_DATE} ) {
-            my $visit_date = iso_date( $hash{VISIT_DATE} );
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_date} = $visit_date;
-        }
-
-        my $mets_date = q{};
-	my $crpc_date = q{};
-
-        if ( $hash{DateofFirstMetastases} ) {
-            $mets_date = iso_date( $hash{DateofFirstMetastases} );
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_mets_date} = $mets_date;
-        }
-
-        if ( $hash{DateofCRPC} ) {
-	    $crpc_date = iso_date( $hash{DateofCRPC} );
-            $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{dx_crpc_date} = $crpc_date;
-        }
-
-=pod
-
-There are four different types of entries in the next two fields in the incoming
-OnCore table for Prostate Cancer Diagnosis:
-1. Both blank which by this point means they are both '01', and you cannot say which one 
-is "Most Recent" so I guess we will leave that blank for now?
-
-2. There is a date of first metastases and the other column is blank
-3. There is a date of CRPC and the other column is blank
-4. Both have a date like this: MM-DD-YYYY
-
-=cut
-
-    if ( $mets_date && $crpc_date ) {
-        my @dates = sort( $mets_date, $crpc_date, );
-        $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{date_of_mcrpc} = $dates[1];
-    }
-    elsif ( $hash{DateofFirstMetastases} ) {
-        $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{date_of_mcrpc} = $mets_date;
-    }
-    elsif ( $hash{DateofCRPC} ) {
-        $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{date_of_mcrpc} = $crpc_date;
-    }
-	
-    $redcap->{$patient_id}{'pre_study_screen_arm_2-BLANK'}{prostate_cancer_initial_diagnosis_complete} = '2';
-} # close sub
 
 sub iso_date {
     my $good_date = q{};
@@ -216,18 +295,7 @@ sub iso_date {
         $good_date = $year . '-' . $month . '-' . $day;
     }
     else {
-        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for patient $patient_id in Package Diagnosis\n";
-#	{
-#            no strict 'refs';
-#            for my $var (keys %{'main::'}) {
-#                if ( defined ${'main::'}{$var} ) {
-#                    print STDERR "$var\t${'main::'}{$var}\n";
-#                }
-#		else {
-#                    print STDERR "$var\tundefined\n";
-#		}
-#            }
-#        }
+        print STDERR "Could not properly parse this as a date:\t", $bad_date, " for a patient in Package Additional\n";
     }
     return $good_date;
 } # close sub iso_date
