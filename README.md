@@ -57,6 +57,7 @@ You might think that every patient absolutely required a Baseline biopsy specime
 ### Some Patients have a Progression Event
 Another way of stating this is that not every patient enrolled in the study goes on to progress.  In some cases the patients may have died from some other cause.  In other cases the patient may have withdrawn, or gone off-study; however MOST of the patients apparently do eventually have a progression event.
 #### A minority of patients have gt 1 Progression Event
+Any processing code has to take into account that some patients will have multiple progression events, but note, that this is not the same as having multiple progression biopsies.  In short, your data model has to account for progression_1 (which usually seems to be described as plain old 'progression'), progression_2, and progression_3, otherwise some records will not be properly processed.
 
 #### Select Patients had a second Biopsy Procedure from one (or more) metastatic sites; by definition, this is a "Progression Biopsy"
 
