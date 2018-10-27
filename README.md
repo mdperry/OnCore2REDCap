@@ -41,12 +41,9 @@ My basic workflow (based on my previous bioinformatic Data Wrangling experience)
  6. In general, the first ~ 13 columns in each of the OnCore tables are named and ordered in the same pattern, and contain what might be called high-level metadata for the project.  One of these columns is named 'Not Applicable or Missing'.  In general, my Perl code logic skips processing any records with an entry in this field, but in the second iteration of coding, I typically flagged any such patient_ids at this pre-processing step and either reviewed that record manually, or queried the data providers to confirm my understanding
  7. After converting each table into a TSV I would use CLI tools to count the number of records and number of columns in that table, to confirm that all of the rows were the same length.  This is important because some of the fields in some of the tables can contain free-text entries, and in some cases the CRAs have cut blocks of text from some other spreadsheet program and pasted them verbatim into OnCore.  After being exported from OnCore these offending fields may have all manner of extra carriage returns, linefeeds, newlines, etc. etc.  Most of the tables were "clean" and behaved as expected.  A couple had a small number of lines with fields I cleaned up manually, but one table, named GU Disease Assessment, had dozens, if not scores, of records where one specific column had been mangled by saving as a TSV.  Initially I attempted to manually clean up the offending fields in this table, but eventually grew so frustrated that I derived a search and replace step in Calc that cleaned all of these up.  Typically, I would replace the unwanted characters with a single blank space, or in some cases a vertical pipe symbol like this ```|```.
    
-   
-   
 ## Major Concepts
 ### N.B. The tables exported from OnCore have all manner of errors and inconsistencies
 Perhaps this is not such a big surprise.  Perhaps the most obvious problem/issue is that some of the tables, the Blood labs table in particular, contain what are essentially empty records, as if they were placeholders created but never filled in completely.  There are also essentially duplicate records in some of the tables as if two different people entered the same information on different dates.  There are also copy-paste errors and typos.  You have been warned.
-
 
 ### The OnCore Demographics Table contains the master list of Patient IDs
 This table has one, and only one, record for each patient_id.
@@ -56,12 +53,23 @@ You might think that every patient absolutely required a Baseline biopsy specime
 
 ### Some Patients have a Progression Event
 Another way of stating this is that not every patient enrolled in the study goes on to progress.  In some cases the patients may have died from some other cause.  In other cases the patient may have withdrawn, or gone off-study; however MOST of the patients apparently do eventually have a progression event.
+
 #### A minority of patients have gt 1 Progression Event
 Any processing code has to take into account that some patients will have multiple progression events, but note, that this is not the same as having multiple progression biopsies.  In short, your data model has to account for progression_1 (which usually seems to be described as plain old 'progression'), progression_2, and progression_3, otherwise some records will not be properly processed.
 
 #### Select Patients had a second Biopsy Procedure from one (or more) metastatic sites; by definition, this is a "Progression Biopsy"
+At first I assumed that patients without a Progression Biopsy had never progressed, but that is not true.  While most patients do eventually progess (mentioned above), only a subset of these patients also have a progression biopsy.  One patient had two separate progression biopsies from two separate anatomical sites, on the same date (or on two adjacent dates).  Four patients had a second subsequent progression biopsy specimen collected from a second progression event.  One of these patients had a third progression biopsy collected.
 
 #### Virtually every patient with a Baseline Biopsy sample/specimen received subsequent treatment, post-bx-tx, and each treatment *could* have a ProgressionDate; these **ALSO** define Progression Events
+During post-biopsy therapy (after the baseline biopsy), patients who progressed would typically acquire a 'Treatment Progression Date' and this is recorded in the Subsequent Treatment Table from OnCore.  There are many, many, more of these progression events than there are progression biopsies.  The code in these Perl modules takes these treatment progression dates into account, and constructs a timeline for each patient, allowing the proper annotation of e.g., the PSA tests, Blood Lab Tests, and Radiographic Disease Assays.
+
+#### The Specimen Table ALSO contains information about a few more additional progression events.
+In other words, there are patients without a progression biopsy in the biopsy table, and without a post-biopsy therapy treatment progression date, who nonetheless are annotated in the Specimen table has having 'Progression' specimens.  I missed this the first time around, and it was only after digging much deeper into the implied OnCore Data Model that I discovered this.  The Perl script now incorporates that specimen progression data as well.
+
+#### There is a Fourth, Implicit, record of progression data that is lurking in the OnCore tables
+There are patients with records in various tables, tagged, or annotated, as Progressions, that were not discovered using any of the the three sources described above.  So in total there are four different sources of information that can be used to assign a timepoint to an assay.
+
+### General Comments
 This is a Perl script and several associated modules that parses a specific collection of TSV files and then
 generates a monolithic TSV table that is almost ready to uploaded/imported into a REDCap project (if the REDCap project
 has the correct matching Data Dictionary).
