@@ -19,7 +19,7 @@ Archive:  125519-StudyData-04-10-2018.zip
 |SU2C Biopsy V3.xlsx | su2c_biopsy_v3_new_filtered.tsv|
 |SU2C Pr Ca Tx Sumry V2.xlsx | su2c_pr_ca_tx_sumry_v2_new_filtered.tsv|
 |SU2C Prior TX V3.xlsx | su2c_prior_tx_v3_new_filtered.tsv|
-|SU2C Specimen V1.xlsx | Not used|
+|SU2C Specimen V1.xlsx | su2c_specimen_v1_extra_progression_records.tsv|
 |SU2C Subsequent Treatment V1.xlsx | su2c_subsequent_treatment_v1_new_filtered.tsv|
 |SU2C Tissue Report V1.xlsx | Not used |
 
@@ -44,14 +44,18 @@ My basic workflow (based on my previous bioinformatic Data Wrangling experience)
    
    
 ## Major Concepts
-
+### N.B. The tables exported from OnCore have all manner of errors and inconsistencies
+Perhaps this is not such a big surprise.  Perhaps the most obvious problem/issue is that some of the tables, the Blood labs table in particular, contain what are essentially empty records, as if they were placeholders created but never filled in completely.  There are also essentially duplicate records in some of the tables as if two different people entered the same information on different dates.  There are also copy-paste errors and typos.  You have been warned.
 
 
 ### The OnCore Demographics Table contains the master list of Patient IDs
+This table has one, and only one, record for each patient_id.
 
 ### Most (but not all) Patients have at least one (1) Biopsy (i.e. a Baseline Biopsy)
+You might think that every patient absolutely required a Baseline biopsy specimen in order to enter the study, but this is not the case, so any processing you do always has to check for this, or at least not assume that there will definitely be a baseline biopsy.
 
 ### Some Patients have a Progression Event
+Another way of stating this is that not every patient enrolled in the study goes on to progress.  In some cases the patients may have died from some other cause.  In other cases the patient may have withdrawn, or gone off-study; however MOST of the patients apparently do eventually have a progression event.
 #### A minority of patients have gt 1 Progression Event
 
 #### Select Patients had a second Biopsy Procedure from one (or more) metastatic sites; by definition, this is a "Progression Biopsy"
